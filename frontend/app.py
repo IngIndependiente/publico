@@ -6,6 +6,13 @@ import dash_bootstrap_components as dbc
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
+import pytz
+
+_TZ_CL = pytz.timezone('America/Santiago')
+
+def ahora_cl():
+    """Retorna datetime actual en zona horaria Santiago de Chile."""
+    return datetime.now(_TZ_CL)
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -181,6 +188,14 @@ def crear_sidebar():
                             dbc.ModalBody([
                                 dbc.Input(id="input-sync-password", type="password", placeholder="Contraseña"),
                                 html.Div(id="sync-modal-status", className="mt-2"),
+                                dbc.Progress(
+                                    id="sync-progress",
+                                    value=0,
+                                    striped=True,
+                                    animated=True,
+                                    style={"height": "20px", "display": "none"},
+                                    className="mt-2 mb-1"
+                                ),
                                 html.H6("Sync logs", className="mt-3"),
                                 html.Pre(id="sync-log", style={
                                     'maxHeight': '300px',
@@ -698,7 +713,7 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
             total = data.get("total", 0)
             stats = data.get("stats", {}) # Obtener estadísticas
             
-            ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            ahora = ahora_cl().strftime("%d/%m/%Y %H:%M:%S")
             
             return personas, str(total), ahora, stats
     except Exception as e:
@@ -1649,51 +1664,53 @@ def toggle_sync_modal(open_click, cancel_click, confirm_click, is_open):
     Output("sync-modal-status", "children"),
     Output("store-sync-status", "data"),
     Output("interval-sync-poll", "disabled"),
+    Output("sync-progress", "value"),
+    Output("sync-progress", "style"),
+    Output("sync-progress", "color"),
     Input("btn-sync-confirm", "n_clicks"),
     Input("interval-sync-poll", "n_intervals"),
     State("input-sync-password", "value"),
     prevent_initial_call=True,
 )
 def handle_sync(confirm_click, n_intervals, password):
-    """Maneja inicio de sync y polling de estado en un solo callback.
-
-    - Si se activa por `btn-sync-confirm`: valida contraseña y lanza `control.request_sync()`.
-    - Si se activa por `interval-sync-poll`: consulta `control.get_status()` y actualiza el store.
-    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
     trigger = ctx.triggered[0]["prop_id"]
 
-    # Si el trigger fue el botón de confirmar: iniciar sync
+    _progress_running = {"height": "20px", "display": "block"}
+    _progress_hidden  = {"height": "20px", "display": "none"}
+
     if "btn-sync-confirm" in trigger:
         res = control.request_sync(password or "")
         if not res.get("ok"):
-            # No iniciar polling, mostrar error
             logs = "\n".join(control.get_logs(200))
-            return logs, dbc.Alert(res.get("msg", "Error"), color="danger"), dash.no_update, True
-
-        # Sync iniciado: devolver mensaje y habilitar polling
+            return logs, dbc.Alert(res.get("msg", "Error"), color="danger"), dash.no_update, True, 0, _progress_hidden, "primary"
         status = control.get_status()
         logs = "\n".join(control.get_logs(200))
-        return logs, dbc.Alert("Sincronización iniciada...", color="info"), status, False
+        return logs, dbc.Alert("Sincronización iniciada...", color="info"), status, False, 30, _progress_running, "info"
 
-    # Si el trigger es el interval: devolver estado y decidir si seguir polling
     if "interval-sync-poll" in trigger:
         status = control.get_status()
         state = status.get("state")
         logs = "\n".join(control.get_logs(500))
         if state in ("finished", "error", "idle", "stopped"):
-            # Mostrar mensaje final según estado y detener polling
             if state == "finished":
-                modal_msg = dbc.Alert("Sincronización completada", color="success")
+                modal_msg = dbc.Alert("Sincronización completada ✓", color="success")
+                prog_val, prog_color = 100, "success"
             elif state == "error":
                 modal_msg = dbc.Alert(f"Error: {status.get('message','')}", color="danger")
+                prog_val, prog_color = 100, "danger"
             else:
-                modal_msg = dbc.Alert(status.get('message', 'Sincronización finalizada'), color="info")
-            return logs, modal_msg, status, True
-        # Seguir polling
-        return logs, dash.no_update, status, False
+                modal_msg = dbc.Alert(status.get('message', 'Finalizado'), color="info")
+                prog_val, prog_color = 100, "info"
+            return logs, modal_msg, status, True, prog_val, _progress_running, prog_color
+        # Sigue corriendo - mover la barra
+        log_line = status.get('message', '')
+        modal_msg = dbc.Alert(log_line, color="info") if log_line else dash.no_update
+        return logs, modal_msg, status, False, 60, _progress_running, "info"
+
+    raise PreventUpdate
 
 @app.callback(
     Output("page-content", "style"),

@@ -2,21 +2,26 @@
 import threading
 import time
 import traceback
-import uvicorn
 import socket
 import sys
-import io
-import contextlib
+import pytz as _pytz
+import datetime as _dt
 
 from backend import config
-from backend import sync_conversations
 from backend.database.dataframe_storage import get_storage
 from pathlib import Path
 from typing import Optional
+import requests as _requests
 
 _lock = threading.RLock()
+_TZ_CL = _pytz.timezone('America/Santiago')
+
+def _ts_cl():
+    """Timestamp actual en hora de Santiago."""
+    return _dt.datetime.now(_TZ_CL).strftime('%Y-%m-%d %H:%M:%S')
+
 _server_thread: Optional[threading.Thread] = None
-_server_obj: Optional[uvicorn.Server] = None
+_server_obj = None
 _status = {"state": "idle", "message": "", "last": None}
 _logs = []
 _max_logs = 2000
@@ -24,12 +29,10 @@ _max_logs = 2000
 
 def _append_log(line: str):
     with _lock:
-        # normalizar y dividir por líneas
         for l in str(line).splitlines():
-            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            ts = _ts_cl()
             entry = f"[{ts}] {l}"
             _logs.append(entry)
-            # mantener tamaño
             if len(_logs) > _max_logs:
                 del _logs[0: len(_logs) - _max_logs]
 
@@ -58,6 +61,7 @@ def get_status():
 def _uvicorn_runner():
     global _server_obj
     try:
+        import uvicorn
         cfg = uvicorn.Config(
             "backend.main:app",
             host=config.BACKEND_HOST,
@@ -118,57 +122,64 @@ def stop_backend(timeout=10):
     return False
 
 def _do_sync(limit: int = 50, include_facebook=True, include_instagram=False):
+    """Llama la API del backend para sincronizar todos los candidatos."""
     try:
-        _set_status("running_sync", "sincronizando...")
-        # Capturar prints de las funciones de sincronización para enviarlos al front
-        class _LogWriter(io.StringIO):
-            def write(self, s):
-                try:
-                    if s and not s.isspace():
-                        _append_log(s)
-                except Exception:
-                    pass
-                # también escribir a stderr original para visibilidad local
-                try:
-                    sys.__stdout__.write(s)
-                except Exception:
-                    pass
+        _set_status("running_sync", "obteniendo candidatos...")
+        backend_url = config.BACKEND_URL
 
-        lw = _LogWriter()
-        ctx_out = contextlib.redirect_stdout(lw)
-        ctx_err = contextlib.redirect_stderr(lw)
-        ctx = contextlib.ExitStack()
-        ctx.enter_context(ctx_out)
-        ctx.enter_context(ctx_err)
-        # Llamadas concretas (usa los helpers existentes)
-        # Intentamos obtener page/account ids desde meta_client si es posible
-        try:
-            if include_facebook:
-                try:
-                    page_info = sync_conversations.meta_client.obtener_info_pagina()
-                    page_id = page_info.get("id")
-                    if page_id:
-                        sync_conversations.sincronizar_facebook(page_id, limit=limit)
-                except Exception:
-                    pass
-            if include_instagram:
-                try:
-                    page_info = sync_conversations.meta_client.obtener_info_pagina()
-                    ig_acc = page_info.get("instagram_business_account", {}) or {}
-                    account_id = ig_acc.get("id")
-                    if account_id:
-                        sync_conversations.sincronizar_instagram(account_id, limit=limit)
-                except Exception:
-                    pass
-        finally:
+        # 1. Obtener lista de candidatos conectados
+        resp = _requests.get(f"{backend_url}/api/candidatos", timeout=10)
+        if not resp.ok:
+            raise Exception(f"Error obteniendo candidatos: {resp.status_code} {resp.text}")
+
+        candidatos = resp.json()
+        if not candidatos:
+            _set_status("finished", "No hay candidatos conectados para sincronizar")
+            _append_log("No hay candidatos conectados.")
+            return
+
+        _append_log(f"Sincronizando {len(candidatos)} candidato(s)...")
+
+        errores = []
+        for i, candidato in enumerate(candidatos):
+            cid = candidato.get("id")
+            nombre = candidato.get("nombre", f"candidato {cid}")
+            _set_status("running_sync", f"Sincronizando {nombre} ({i+1}/{len(candidatos)})...")
+            _append_log(f"\n▶ Sincronizando {nombre}...")
             try:
-                ctx.close()
-            except Exception:
-                pass
-        _set_status("finished", "sincronización completada")
+                r = _requests.post(
+                    f"{backend_url}/api/candidatos/{cid}/sincronizar",
+                    params={
+                        "limit": limit,
+                        "sincronizar_facebook": include_facebook,
+                        "sincronizar_instagram": include_instagram or include_facebook,
+                    },
+                    timeout=120,
+                )
+                if r.ok:
+                    data = r.json()
+                    _append_log(f"  ✓ {data.get('mensaje', 'OK')}")
+                    if data.get("errores"):
+                        for e in data["errores"]:
+                            _append_log(f"  ⚠ {e}")
+                else:
+                    msg = f"Error {r.status_code}: {r.text[:200]}"
+                    _append_log(f"  ✗ {msg}")
+                    errores.append(f"{nombre}: {msg}")
+            except Exception as exc:
+                msg = str(exc)
+                _append_log(f"  ✗ {msg}")
+                errores.append(f"{nombre}: {msg}")
+
+        if errores:
+            _set_status("finished", f"Completado con {len(errores)} error(es)")
+        else:
+            _set_status("finished", "Sincronización completada")
+        _append_log("\n✅ Sincronización completada")
+
     except Exception as e:
-        _set_status("error", "sync error: " + str(e) + "\n" + traceback.format_exc())
-        _append_log("ERROR: " + str(e))
+        _set_status("error", "sync error: " + str(e))
+        _append_log("ERROR: " + str(e) + "\n" + traceback.format_exc())
 
 def request_sync(password: str, limit: int = 50):
     """Public: iniciar sync en background si password coincide."""
@@ -176,34 +187,13 @@ def request_sync(password: str, limit: int = 50):
         return {"ok": False, "msg": "SYNC_PASSWORD no está configurada"}
     if password != config.SYNC_PASSWORD:
         return {"ok": False, "msg": "Contraseña incorrecta"}
-    # lanzar hilo que orquesta stop -> sync -> start
+
     def _worker():
         try:
-            # En lugar de detener el backend (que causa problemas de bind en Windows),
-            # ejecutamos la sincronización en background y luego recargamos el storage
-            # en memoria. Los métodos de almacenamiento ahora guardan de forma atómica
-            # por lo que el swap en disco es seguro.
-            # Hacer backup antes de sincronizar (opcional pero recomendado)
-            try:
-                storage = get_storage()
-                backup_dir = Path(config.DATA_DIR) / "backups"
-                storage.backup_all(backup_dir)
-            except Exception:
-                # no crítico; continuar con sync
-                pass
-
             _do_sync(limit=limit)
-
-            # forzar recarga desde disco para que la instancia en memoria refleje los nuevos datos
-            try:
-                storage.reload_from_disk()
-            except Exception:
-                # no crítico: sólo reportar
-                _set_status("warning", "sync finalizado, pero error recargando storage")
         except Exception as e:
             _set_status("error", "sync error: " + str(e) + "\n" + traceback.format_exc())
-        else:
-            _set_status("finished", "sincronización completada")
+
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
     return {"ok": True, "msg": "Sync iniciado"}
