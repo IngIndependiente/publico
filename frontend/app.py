@@ -534,6 +534,44 @@ def crear_contenido():
                 ),
             ], id="modal-privacidad", size="lg", scrollable=True, is_open=False),
 
+            # Modal Logs del Sistema
+            dbc.Modal([
+                dbc.ModalHeader([
+                    dbc.ModalTitle([
+                        html.I(className="fas fa-terminal me-2"),
+                        "Logs del Sistema (backend)"
+                    ]),
+                    dbc.Button(
+                        html.I(className="fas fa-sync-alt"),
+                        id="btn-logs-refresh",
+                        color="outline-secondary",
+                        size="sm",
+                        className="ms-2",
+                        title="Actualizar"
+                    ),
+                ]),
+                dbc.ModalBody(
+                    html.Pre(
+                        id="logs-contenido",
+                        style={
+                            "backgroundColor": "#1e1e1e",
+                            "color": "#d4d4d4",
+                            "padding": "12px",
+                            "borderRadius": "4px",
+                            "maxHeight": "65vh",
+                            "overflowY": "auto",
+                            "fontSize": "0.78rem",
+                            "fontFamily": "Consolas, monospace",
+                            "whiteSpace": "pre-wrap",
+                            "wordBreak": "break-all",
+                        }
+                    )
+                ),
+                dbc.ModalFooter(
+                    dbc.Button("Cerrar", id="btn-logs-cerrar", color="secondary")
+                ),
+            ], id="modal-logs", size="xl", scrollable=False, is_open=False),
+
             # Footer
             html.Footer([
                 html.Hr(),
@@ -547,12 +585,55 @@ def crear_contenido():
                         className="p-0 text-muted",
                         style={"fontSize": "0.875rem", "verticalAlign": "baseline"}
                     ),
+                    html.Span(" · ", className="text-muted small"),
+                    dbc.Button(
+                        [html.I(className="fas fa-terminal me-1"), "Logs"],
+                        id="btn-abrir-logs",
+                        color="link",
+                        size="sm",
+                        className="p-0 text-muted",
+                        style={"fontSize": "0.875rem", "verticalAlign": "baseline"}
+                    ),
                 ], className="text-center py-3")
             ]),
         ],
         style=CONTENT_STYLE,
         id="page-content"
     )
+
+
+# ── Callback Logs ──────────────────────────────────────────────────────────
+@app.callback(
+    [Output("modal-logs", "is_open"),
+     Output("logs-contenido", "children")],
+    [Input("btn-abrir-logs", "n_clicks"),
+     Input("btn-logs-cerrar", "n_clicks"),
+     Input("btn-logs-refresh", "n_clicks")],
+    [State("modal-logs", "is_open")],
+    prevent_initial_call=True
+)
+def toggle_modal_logs(abrir, cerrar, refresh, is_open):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger = ctx.triggered[0]["prop_id"]
+    if trigger == "btn-logs-cerrar.n_clicks":
+        return False, dash.no_update
+    # Abrir o refrescar: fetch logs del backend
+    texto = "(sin logs)"
+    try:
+        r = requests.get(f"{BACKEND_URL}/api/debug/logs", params={"n": 300}, timeout=8)
+        if r.status_code == 200:
+            lines = r.json().get("lines", [])
+            total = r.json().get("total", 0)
+            header = f"── {len(lines)} líneas mostradas de {total} en buffer ──\n\n"
+            texto = header + "\n".join(lines)
+        else:
+            texto = f"HTTP {r.status_code}: {r.text[:500]}"
+    except Exception as exc:
+        texto = f"Error al obtener logs: {exc}"
+    return True, texto
+# ───────────────────────────────────────────────────────────────────────────
 
 
 # Layout principal
