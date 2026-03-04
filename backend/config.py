@@ -51,8 +51,8 @@ META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "agente_politico_token_secret
 
 # OAuth Redirect URI (para Facebook Login for Business)
 if IS_WEB_ENV:
-    # En producción web: usar dominio definitivo
-    OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "https://app.retarget.cl/auth/facebook/callback")
+    # En producción web: usar dominio de Railway (DEBE coincidir exactamente con lo registrado en Meta Developers Portal)
+    OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "https://backend-retarget.up.railway.app/auth/facebook/callback")
 else:
     # En local: usar localhost
     OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/facebook/callback")
@@ -93,9 +93,17 @@ BACKEND_PORT = int(os.getenv("BACKEND_PORT", 8000))
 FRONTEND_PORT = int(os.getenv("PORT", os.getenv("FRONTEND_PORT", 8050)))
 
 # URL del backend para el frontend (puede ser diferente en producción)
-# En Railway: usar variable de entorno BACKEND_URL (ej: https://crm-politics-backend.railway.app)
+# En Railway: usar variable de entorno BACKEND_URL (ej: https://backend-retarget.up.railway.app)
 # En local: usar http://localhost:8000
 BACKEND_URL = os.getenv("BACKEND_URL", f"http://{BACKEND_HOST}:{BACKEND_PORT}")
+
+# URL del frontend (para redirects del backend al frontend)
+# En Railway: usar variable de entorno FRONTEND_URL (ej: https://publico-retarget.up.railway.app)
+# En local: usar http://localhost:8050
+if IS_WEB_ENV:
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://publico-retarget.up.railway.app")
+else:
+    FRONTEND_URL = os.getenv("FRONTEND_URL", f"http://localhost:{FRONTEND_PORT}")
 
 # Debug
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
