@@ -154,7 +154,7 @@ def _do_sync(limit: int = 50, include_facebook=True, include_instagram=False):
                         "sincronizar_facebook": include_facebook,
                         "sincronizar_instagram": include_instagram or include_facebook,
                     },
-                    timeout=120,
+                    timeout=300,
                 )
                 if r.ok:
                     data = r.json()

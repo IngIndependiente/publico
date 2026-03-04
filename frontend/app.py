@@ -1363,26 +1363,37 @@ def sincronizar_candidato_individual(n_clicks, button_id):
     candidato_id = button_id["index"]
     
     try:
-        # Llamar endpoint de sincronización
+        # Llamar endpoint de sincronización (síncrono - puede tardar varios minutos)
         response = requests.post(
             f"{BACKEND_URL}/api/candidatos/{candidato_id}/sincronizar",
             params={"limit": 10},
-            timeout=5
+            timeout=300
         )
         
         if response.ok:
             data = response.json()
             sincronizaciones = data.get("sincronizaciones", [])
+            errores = data.get("errores", [])
             
             if sincronizaciones:
                 return dbc.Alert(
                     [
                         html.I(className="fas fa-check-circle me-2"),
-                        "Sincronización iniciada: " + ", ".join(sincronizaciones)
+                        ", ".join(sincronizaciones)
                     ],
-                    color="success",
+                    color="success" if not errores else "warning",
                     dismissable=True,
-                    duration=4000
+                    duration=6000
+                )
+            elif errores:
+                return dbc.Alert(
+                    [
+                        html.I(className="fas fa-exclamation-triangle me-2"),
+                        "Errores: " + ", ".join(errores)
+                    ],
+                    color="danger",
+                    dismissable=True,
+                    duration=6000
                 )
             else:
                 return dbc.Alert(
