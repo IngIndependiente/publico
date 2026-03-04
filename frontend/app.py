@@ -704,7 +704,7 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
         response = requests.post(
             f"{BACKEND_URL}/api/personas/buscar",
             json=payload,
-            timeout=10
+            timeout=30
         )
         
         if response.status_code == 200:
@@ -712,13 +712,24 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
             personas = data.get("personas", [])
             total = data.get("total", 0)
             stats = data.get("stats", {}) # Obtener estadísticas
-            
+            print(f"[buscar_personas] OK – total={total}, personas={len(personas)}, stats={stats}")
             ahora = ahora_cl().strftime("%d/%m/%Y %H:%M:%S")
-            
             return personas, str(total), ahora, stats
+        else:
+            print(f"[buscar_personas] HTTP {response.status_code}: {response.text[:1000]}")
     except Exception as e:
-        print(f"Error al buscar: {e}")
-    
+        print(f"[buscar_personas] Exception: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Intentar obtener info de diagnóstico del backend
+    try:
+        r2 = requests.get(f"{BACKEND_URL}/api/debug/status", timeout=5)
+        if r2.status_code == 200:
+            print(f"[debug/status] {r2.json()}")
+    except Exception:
+        pass
+
     return [], "0", "Error", {}
 
 
