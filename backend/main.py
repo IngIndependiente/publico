@@ -755,7 +755,8 @@ async def sincronizar_candidato(
     background_tasks: BackgroundTasks,
     sincronizar_facebook: bool = Query(True),
     sincronizar_instagram: bool = Query(True),
-    limit: int = Query(10, ge=1, le=100)
+    limit: int = Query(10, ge=1, le=100),
+    force_reprocess: bool = Query(False)
 ):
     """
     Sincronizar conversaciones de Facebook e Instagram de un candidato.
@@ -796,7 +797,8 @@ async def sincronizar_candidato(
                 page_id=candidato['facebook_page_id'],
                 plataforma="facebook",
                 limit=limit,
-                candidato_id=candidato_id
+                candidato_id=candidato_id,
+                force_reprocess=force_reprocess
             )
             result["sincronizaciones"].append("Facebook Messenger programado")
         
@@ -808,7 +810,8 @@ async def sincronizar_candidato(
                 page_id=candidato['instagram_business_account_id'],
                 plataforma="instagram",
                 limit=limit,
-                candidato_id=candidato_id
+                candidato_id=candidato_id,
+                force_reprocess=force_reprocess
             )
             result["sincronizaciones"].append("Instagram Direct programado")
         
@@ -833,7 +836,8 @@ def sincronizar_conversaciones_tarea(
     page_id: str,
     plataforma: str,
     limit: int,
-    candidato_id: int
+    candidato_id: int,
+    force_reprocess: bool = False
 ):
     """
     Tarea en background para sincronizar conversaciones.
@@ -905,7 +909,8 @@ def sincronizar_conversaciones_tarea(
                     username=username,
                     plataforma=plataforma,
                     mensajes=mensajes,
-                    ignorar_id=page_id
+                    ignorar_id=page_id,
+                    force_reprocess=force_reprocess
                 )
                 
                 print(f"      ✅ Procesado: {username or user_id} ({len(mensajes)} mensajes)")

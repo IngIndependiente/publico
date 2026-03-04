@@ -1427,6 +1427,12 @@ def cargar_candidatos_conectados(n):
                                 ),
                             ], width=6),
                         ]),
+                        dbc.Switch(
+                            id={"type": "switch-force-reprocess", "index": candidato_id},
+                            label="Re-analizar todo",
+                            value=False,
+                            className="mt-2 small"
+                        ),
                         html.Div(id={"type": "status-sincronizacion", "index": candidato_id}, className="mt-2")
                     ])
                 ], className="mb-2")
@@ -1446,20 +1452,22 @@ def cargar_candidatos_conectados(n):
     Output({"type": "status-sincronizacion", "index": dash.dependencies.MATCH}, "children"),
     Input({"type": "btn-sincronizar-candidato", "index": dash.dependencies.MATCH}, "n_clicks"),
     State({"type": "btn-sincronizar-candidato", "index": dash.dependencies.MATCH}, "id"),
+    State({"type": "switch-force-reprocess", "index": dash.dependencies.MATCH}, "value"),
     prevent_initial_call=True
 )
-def sincronizar_candidato_individual(n_clicks, button_id):
+def sincronizar_candidato_individual(n_clicks, button_id, force_reprocess):
     """Sincronizar conversaciones de un candidato específico."""
     if not n_clicks:
         raise PreventUpdate
     
     candidato_id = button_id["index"]
+    force_reprocess = bool(force_reprocess)
     
     try:
         # Llamar endpoint de sincronización (síncrono - puede tardar varios minutos)
         response = requests.post(
             f"{BACKEND_URL}/api/candidatos/{candidato_id}/sincronizar",
-            params={"limit": 10},
+            params={"limit": 10, "force_reprocess": force_reprocess},
             timeout=300
         )
         
