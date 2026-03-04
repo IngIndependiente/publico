@@ -746,7 +746,7 @@ def actualizar_tabla(personas):
         else:
             nombre_display = nombre
         
-        analisis_id = p.get("analisis_id", 0)
+        analisis_id = p.get("analisis_id") or 0
         evento_nombre = p.get("evento_nombre") or "Sin asignar"
         
         row = html.Tr([
@@ -754,9 +754,10 @@ def actualizar_tabla(personas):
                 dbc.Button(
                     [html.I(className="fas fa-comments me-1"), "Ver"],
                     id={"type": "btn-ver-conversacion", "index": analisis_id},
-                    color="primary",
+                    color="primary" if analisis_id else "secondary",
                     size="sm",
-                    className="w-100"
+                    className="w-100",
+                    disabled=not analisis_id,
                 ),
                 style={'width': '100px', 'textAlign': 'center'}
             ),
