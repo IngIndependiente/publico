@@ -749,85 +749,100 @@ def listar_candidatos():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Sync job tracker ───────────────────────────────────────────────────────
+import threading as _threading
+_sync_jobs: dict = {}
+_sync_jobs_lock = _threading.Lock()
+
+def _sync_job_update(candidato_id: int, **kwargs):
+    with _sync_jobs_lock:
+        if candidato_id not in _sync_jobs:
+            _sync_jobs[candidato_id] = {"state": "idle", "progress": 0, "total": 0, "message": "", "errors": []}
+        _sync_jobs[candidato_id].update(kwargs)
+
+def _sync_job_get(candidato_id: int) -> dict:
+    with _sync_jobs_lock:
+        return dict(_sync_jobs.get(candidato_id, {"state": "idle"}))
+# ───────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/api/candidatos/{candidato_id}/sync-status")
+def get_sync_status(candidato_id: int):
+    """Retorna el estado actual del job de sincronización para un candidato."""
+    return _sync_job_get(candidato_id)
+
+
 @app.post("/api/candidatos/{candidato_id}/sincronizar")
-async def sincronizar_candidato(
+def sincronizar_candidato(
     candidato_id: int,
-    background_tasks: BackgroundTasks,
     sincronizar_facebook: bool = Query(True),
     sincronizar_instagram: bool = Query(True),
-    limit: int = Query(10, ge=1, le=100),
-    force_reprocess: bool = Query(False)
+    limit: int = Query(50, ge=1, le=200),
+    force_reprocess: bool = Query(False),
+    meses_historico: int = Query(3, ge=1, le=24),
 ):
     """
-    Sincronizar conversaciones de Facebook e Instagram de un candidato.
-    
-    Args:
-        candidato_id: ID del candidato
-        sincronizar_facebook: Si sincronizar Facebook Messenger
-        sincronizar_instagram: Si sincronizar Instagram Direct
-        limit: Número máximo de conversaciones a sincronizar por plataforma
+    Inicia la sincronización en un hilo de fondo y retorna inmediatamente.
+    Usa GET /api/candidatos/{id}/sync-status para consultar el progreso.
     """
+    from datetime import timedelta
     try:
-        # Obtener candidato
         candidato = CandidatoService.obtener_candidato_por_id(candidato_id)
         if not candidato:
             raise HTTPException(status_code=404, detail="Candidato no encontrado")
-        
-        # Verificar que tenga token de acceso
+
         if not candidato.get('facebook_page_access_token'):
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Candidato no tiene token de acceso. Debe conectar su cuenta primero."
             )
-        
-        # Crear cliente con token del candidato
+
+        job = _sync_job_get(candidato_id)
+        if job.get("state") == "running":
+            return {"ok": False, "message": "Ya hay una sincronización en curso para este candidato."}
+
         cliente = crear_cliente_candidato(candidato['facebook_page_access_token'])
-        
-        result = {
-            "candidato_id": candidato_id,
-            "nombre": candidato.get('nombre'),
-            "sincronizaciones": []
-        }
-        
-        # Sincronizar Facebook Messenger
-        if sincronizar_facebook and candidato.get('facebook_page_id'):
-            background_tasks.add_task(
-                sincronizar_conversaciones_tarea,
-                cliente=cliente,
-                page_id=candidato['facebook_page_id'],
-                plataforma="facebook",
-                limit=limit,
-                candidato_id=candidato_id,
-                force_reprocess=force_reprocess
-            )
-            result["sincronizaciones"].append("Facebook Messenger programado")
-        
-        # Sincronizar Instagram Direct
-        if sincronizar_instagram and candidato.get('instagram_business_account_id'):
-            background_tasks.add_task(
-                sincronizar_conversaciones_tarea,
-                cliente=cliente,
-                page_id=candidato['instagram_business_account_id'],
-                plataforma="instagram",
-                limit=limit,
-                candidato_id=candidato_id,
-                force_reprocess=force_reprocess
-            )
-            result["sincronizaciones"].append("Instagram Direct programado")
-        
-        if not result["sincronizaciones"]:
-            result["mensaje"] = "No hay cuentas configuradas para sincronizar"
-        else:
-            result["mensaje"] = "Sincronización iniciada en background"
-        
-        return result
-        
+        fecha_desde = datetime.utcnow() - timedelta(days=30 * meses_historico)
+
+        _sync_job_update(candidato_id, state="running", progress=0, total=0,
+                         message="Iniciando...", errors=[])
+
+        def _run():
+            plataformas = []
+            if sincronizar_facebook and candidato.get('facebook_page_id'):
+                plataformas.append(("facebook", candidato['facebook_page_id']))
+            if sincronizar_instagram and candidato.get('instagram_business_account_id'):
+                plataformas.append(("instagram", candidato['instagram_business_account_id']))
+
+            if not plataformas:
+                _sync_job_update(candidato_id, state="done", message="No hay cuentas configuradas para sincronizar.")
+                return
+
+            for plataforma, page_id in plataformas:
+                sincronizar_conversaciones_tarea(
+                    cliente=cliente,
+                    page_id=page_id,
+                    plataforma=plataforma,
+                    limit=limit,
+                    candidato_id=candidato_id,
+                    force_reprocess=force_reprocess,
+                    fecha_desde=fecha_desde,
+                )
+
+            job = _sync_job_get(candidato_id)
+            if job.get("state") != "error":
+                _sync_job_update(candidato_id, state="done",
+                                 message=f"✅ Sincronización completada — {job.get('progress', 0)} conversaciones procesadas.")
+
+        t = _threading.Thread(target=_run, daemon=True)
+        t.start()
+        return {"ok": True, "message": "Sincronización iniciada en segundo plano."}
+
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error en sincronización: {e}")
-        import traceback
-        traceback.print_exc()
+        _sync_job_update(candidato_id, state="error", message=str(e))
+        import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -837,72 +852,83 @@ def sincronizar_conversaciones_tarea(
     plataforma: str,
     limit: int,
     candidato_id: int,
-    force_reprocess: bool = False
+    force_reprocess: bool = False,
+    fecha_desde: datetime = None,
 ):
-    """
-    Tarea en background para sincronizar conversaciones.
-    
-    Args:
-        cliente: Instancia de MetaAPIClient con token del candidato
-        page_id: ID de la página de Facebook o cuenta de Instagram
-        plataforma: "facebook" o "instagram"
-        limit: Número máximo de conversaciones
-        candidato_id: ID del candidato propietario
-    """
+    from datetime import timedelta
+    if fecha_desde is None:
+        fecha_desde = datetime.utcnow() - timedelta(days=90)
+
     try:
         print(f"\n🔄 Iniciando sincronización de {plataforma} para candidato {candidato_id}")
         print(f"   Page/Account ID: {page_id}")
-        print(f"   Límite: {limit} conversaciones")
-        
-        # Obtener conversaciones
+        print(f"   Límite: {limit} conversaciones | Histórico desde: {fecha_desde.date()}")
+        _sync_job_update(candidato_id, message=f"Obteniendo conversaciones de {plataforma}…")
+
         if plataforma == "facebook":
             conversaciones = cliente.obtener_conversaciones_facebook(page_id, limit)
         else:
             conversaciones = cliente.obtener_conversaciones_instagram(page_id, limit)
-        
+
         if not conversaciones:
             print(f"⚠️ No se encontraron conversaciones de {plataforma}")
+            _sync_job_update(candidato_id, message=f"Sin conversaciones en {plataforma}.")
             return
-        
+
         print(f"✅ Se encontraron {len(conversaciones)} conversaciones")
-        
-        # Procesar cada conversación
+        total = len(conversaciones)
+
+        with _sync_jobs_lock:
+            prev_total = _sync_jobs.get(candidato_id, {}).get("total", 0)
+            _sync_jobs[candidato_id]["total"] = prev_total + total
+
+        from sync_conversations import procesar_mensajes_usuario
+
         with get_db() as db:
             for i, conv in enumerate(conversaciones, 1):
                 conv_id = conv.get("id")
-                print(f"   📨 Procesando conversación {i}/{len(conversaciones)}: {conv_id}")
-                
-                # Obtener mensajes
+                _sync_job_update(candidato_id, message=f"{plataforma}: procesando conversación {i}/{total}…")
+                print(f"   📨 Procesando conversación {i}/{total}: {conv_id}")
+
                 if plataforma == "facebook":
                     mensajes = cliente.obtener_mensajes_conversacion_facebook(conv_id)
                 else:
                     mensajes = cliente.obtener_mensajes_conversacion_instagram(conv_id)
-                
+
                 if not mensajes:
                     print(f"      ⚠️ Sin mensajes")
+                    with _sync_jobs_lock:
+                        _sync_jobs[candidato_id]["progress"] = (_sync_jobs[candidato_id].get("progress", 0) + 1)
                     continue
-                
-                # Extraer participante (usuario)
+
+                import dateutil.parser as _dp
+                mensajes = [
+                    m for m in mensajes
+                    if _dp.isoparse(m.get("created_time", "1970-01-01")).replace(tzinfo=None) >= fecha_desde
+                ]
+                if not mensajes:
+                    print(f"      ⏩ Mensajes anteriores a {fecha_desde.date()}, saltando")
+                    with _sync_jobs_lock:
+                        _sync_jobs[candidato_id]["progress"] = (_sync_jobs[candidato_id].get("progress", 0) + 1)
+                    continue
+
                 participants = conv.get("participants", {}).get("data", [])
                 user_participant = next((p for p in participants if p["id"] != page_id), None)
-                
-                # Si no hay info de participantes, extraer del primer mensaje
+
                 if not user_participant and mensajes:
                     first_msg_from = mensajes[0].get("from", {})
                     if first_msg_from.get("id") != page_id:
                         user_participant = first_msg_from
-                
+
                 if not user_participant:
                     print(f"      ⚠️ No se pudo identificar usuario")
+                    with _sync_jobs_lock:
+                        _sync_jobs[candidato_id]["progress"] = (_sync_jobs[candidato_id].get("progress", 0) + 1)
                     continue
-                
+
                 user_id = user_participant.get("id")
                 username = user_participant.get("name") or user_participant.get("username")
-                
-                # Importar función de procesamiento
-                from sync_conversations import procesar_mensajes_usuario
-                
-                # Procesar mensajes del usuario
+
                 procesar_mensajes_usuario(
                     db=db,
                     user_id=user_id,
@@ -910,17 +936,21 @@ def sincronizar_conversaciones_tarea(
                     plataforma=plataforma,
                     mensajes=mensajes,
                     ignorar_id=page_id,
-                    force_reprocess=force_reprocess
+                    force_reprocess=force_reprocess,
+                    candidato_id=candidato_id,
                 )
-                
+
                 print(f"      ✅ Procesado: {username or user_id} ({len(mensajes)} mensajes)")
-        
+                with _sync_jobs_lock:
+                    _sync_jobs[candidato_id]["progress"] = (_sync_jobs[candidato_id].get("progress", 0) + 1)
+
         print(f"✅ Sincronización de {plataforma} completada para candidato {candidato_id}\n")
-        
+
     except Exception as e:
         print(f"❌ Error en sincronización de {plataforma}: {e}")
         import traceback
         traceback.print_exc()
+        _sync_job_update(candidato_id, state="error", message=f"Error {plataforma}: {str(e)}")
 
 
 @app.post("/api/candidatos/{candidato_id}/configurar-whatsapp")

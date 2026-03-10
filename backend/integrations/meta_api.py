@@ -228,10 +228,11 @@ class MetaAPIClient:
         Returns:
             Lista de conversaciones
         """
-        # Para Instagram, usar el endpoint de media/conversations
+        # Para Instagram, el parámetro platform=instagram es obligatorio
         url = f"{self.base_url}/{instagram_account_id}/conversations"
         params = {
             "access_token": self.instagram_token,
+            "platform": "instagram",
             "fields": "id,updated_time,participants",
             "limit": limit
         }

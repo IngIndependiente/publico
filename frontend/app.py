@@ -539,7 +539,9 @@ def crear_contenido():
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
             dcc.Store(id="store-facebook-user-id"),  # facebook_user_id del usuario autenticado
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
+            dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
             dcc.Interval(id="interval-sync-poll", interval=2000, n_intervals=0, disabled=True),
+            dcc.Interval(id="interval-sync-candidato", interval=2500, n_intervals=0, disabled=True),
             # Interval para actualización automática
             dcc.Interval(
                 id="interval-actualizacion",
@@ -1554,79 +1556,140 @@ def cargar_candidatos_conectados(n, lang):
     return html.Div()
 
 
-# Callback para sincronizar candidato individual
+# Callback para sincronizar candidato individual (dispara job en background)
 @app.callback(
-    Output({"type": "status-sincronizacion", "index": dash.dependencies.MATCH}, "children"),
-    Input({"type": "btn-sincronizar-candidato", "index": dash.dependencies.MATCH}, "n_clicks"),
-    State({"type": "btn-sincronizar-candidato", "index": dash.dependencies.MATCH}, "id"),
-    State({"type": "switch-force-reprocess", "index": dash.dependencies.MATCH}, "value"),
+    [Output("store-sync-candidatos", "data"),
+     Output({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "children"),
+     Output("interval-sync-candidato", "disabled")],
+    Input({"type": "btn-sincronizar-candidato", "index": dash.dependencies.ALL}, "n_clicks"),
+    [State("store-sync-candidatos", "data"),
+     State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id"),
+     State({"type": "switch-force-reprocess", "index": dash.dependencies.ALL}, "value")],
     prevent_initial_call=True
 )
-def sincronizar_candidato_individual(n_clicks, button_id, force_reprocess):
-    """Sincronizar conversaciones de un candidato específico."""
-    if not n_clicks:
+def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force):
+    """Lanza sincronización en background; habilita el interval de polling."""
+    ctx = dash.callback_context
+    if not ctx.triggered or not any(c for c in all_clicks if c):
         raise PreventUpdate
-    
-    candidato_id = button_id["index"]
-    force_reprocess = bool(force_reprocess)
-    
+
+    # Determinar cuál botón fue pulsado
+    import json as _json
+    prop = ctx.triggered[0]["prop_id"].replace(".n_clicks", "")
     try:
-        # Llamar endpoint de sincronización (síncrono - puede tardar varios minutos)
-        response = requests.post(
+        clicked_id = _json.loads(prop)
+        candidato_id = clicked_id["index"]
+    except Exception:
+        raise PreventUpdate
+
+    # Determinar force_reprocess para este candidato
+    force = False
+    for id_dict, fval in zip(all_ids, all_force):
+        if id_dict["index"] == candidato_id:
+            force = bool(fval)
+            break
+
+    # Llamar al endpoint (no bloqueante, retorna inmediatamente)
+    try:
+        resp = requests.post(
             f"{BACKEND_URL}/api/candidatos/{candidato_id}/sincronizar",
-            params={"limit": 10, "force_reprocess": force_reprocess},
-            timeout=300
+            params={"limit": 50, "force_reprocess": force, "meses_historico": 3},
+            timeout=10
         )
-        
-        if response.ok:
-            data = response.json()
-            sincronizaciones = data.get("sincronizaciones", [])
-            errores = data.get("errores", [])
-            
-            if sincronizaciones:
-                return dbc.Alert(
-                    [
-                        html.I(className="fas fa-check-circle me-2"),
-                        ", ".join(sincronizaciones)
-                    ],
-                    color="success" if not errores else "warning",
-                    dismissable=True,
-                    duration=6000
-                )
-            elif errores:
-                return dbc.Alert(
-                    [
-                        html.I(className="fas fa-exclamation-triangle me-2"),
-                        "Errores: " + ", ".join(errores)
-                    ],
-                    color="danger",
-                    dismissable=True,
-                    duration=6000
-                )
-            else:
-                return dbc.Alert(
-                    "No hay cuentas configuradas para sincronizar",
-                    color="warning",
-                    dismissable=True,
-                    duration=4000
-                )
+        if not resp.ok:
+            msg = resp.json().get("detail", "Error desconocido")
+            ok = False
         else:
-            error_detail = response.json().get("detail", "Error desconocido")
-            return dbc.Alert(
-                f"Error: {error_detail}",
-                color="danger",
-                dismissable=True,
-                duration=4000
-            )
-            
-    except Exception as e:
-        print(f"Error al sincronizar candidato {candidato_id}: {e}")
-        return dbc.Alert(
-            f"Error de conexión: {str(e)}",
-            color="danger",
-            dismissable=True,
-            duration=4000
-        )
+            data = resp.json()
+            ok = data.get("ok", True)
+            msg = data.get("message", "")
+    except Exception as exc:
+        ok = False
+        msg = str(exc)
+
+    store_data = store_data or {}
+    statuses = []
+    for id_dict in all_ids:
+        cid = id_dict["index"]
+        if cid == candidato_id:
+            if ok:
+                store_data[str(cid)] = {"state": "running", "progress": 0, "total": 0, "message": "Iniciando…"}
+                statuses.append(html.Div([
+                    dbc.Spinner(size="sm", color="info", className="me-2"),
+                    html.Small("Sincronizando…", className="text-muted")
+                ]))
+            else:
+                statuses.append(dbc.Alert(f"Error: {msg}", color="danger", dismissable=True, duration=5000))
+        else:
+            statuses.append(dash.no_update)
+
+    still_running = any(v.get("state") == "running" for v in store_data.values())
+    return store_data, statuses, not still_running
+
+
+@app.callback(
+    [Output("store-sync-candidatos", "data", allow_duplicate=True),
+     Output({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "children", allow_duplicate=True),
+     Output("interval-sync-candidato", "disabled", allow_duplicate=True)],
+    Input("interval-sync-candidato", "n_intervals"),
+    [State("store-sync-candidatos", "data"),
+     State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id")],
+    prevent_initial_call=True
+)
+def poll_sync_candidatos(n, store_data, all_ids):
+    """Polling de progreso para sincronizaciones individuales."""
+    if not store_data:
+        raise PreventUpdate
+
+    running = {k: v for k, v in store_data.items() if v.get("state") == "running"}
+    if not running:
+        raise PreventUpdate
+
+    new_store = dict(store_data)
+    statuses = []
+
+    for id_dict in all_ids:
+        cid = id_dict["index"]
+        cid_str = str(cid)
+        if cid_str not in running:
+            statuses.append(dash.no_update)
+            continue
+        try:
+            r = requests.get(f"{BACKEND_URL}/api/candidatos/{cid}/sync-status", timeout=5)
+            if not r.ok:
+                statuses.append(dash.no_update)
+                continue
+            job = r.json()
+            new_store[cid_str] = job
+            state = job.get("state", "idle")
+            progress = job.get("progress", 0)
+            total = job.get("total", 0)
+            msg = job.get("message", "")
+            pct = int(progress / total * 100) if total > 0 else 50
+
+            if state == "running":
+                statuses.append(html.Div([
+                    dbc.Progress(value=pct, striped=True, animated=True,
+                                 style={"height": "6px"}, className="mb-1"),
+                    html.Small(f"{msg}  ({progress}/{total})", className="text-muted")
+                ]))
+            elif state == "done":
+                statuses.append(dbc.Alert(
+                    [html.I(className="fas fa-check-circle me-2"), msg or f"✓ Completado ({progress} conversaciones)"],
+                    color="success", dismissable=True, duration=8000
+                ))
+            elif state == "error":
+                statuses.append(dbc.Alert(
+                    [html.I(className="fas fa-exclamation-triangle me-2"), msg],
+                    color="danger", dismissable=True
+                ))
+            else:
+                statuses.append(dash.no_update)
+        except Exception as exc:
+            statuses.append(dash.no_update)
+
+    still_running = any(v.get("state") == "running" for v in new_store.values())
+    return new_store, statuses, not still_running
 
 
 # Callback para abrir modal de configuración WhatsApp
