@@ -19,7 +19,35 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     """Inicializar la base de datos creando todas las tablas."""
     Base.metadata.create_all(bind=engine)
-    
+
+    # Migración: agregar columna plataforma a analisis si no existe
+    try:
+        with engine.connect() as conn:
+            if "sqlite" not in config.DATABASE_URL:
+                from sqlalchemy import text
+                conn.execute(text("""
+                    ALTER TABLE analisis
+                    ADD COLUMN IF NOT EXISTS plataforma VARCHAR(50)
+                """))
+                conn.commit()
+                print("✓ Columna plataforma agregada a analisis")
+    except Exception as e:
+        print(f"Migración analisis.plataforma (puede ser normal si ya existe): {e}")
+
+    # Migración: agregar columna owner_facebook_user_id a candidatos si no existe
+    try:
+        with engine.connect() as conn:
+            if "sqlite" not in config.DATABASE_URL:
+                from sqlalchemy import text
+                conn.execute(text("""
+                    ALTER TABLE candidatos
+                    ADD COLUMN IF NOT EXISTS owner_facebook_user_id VARCHAR(200)
+                """))
+                conn.commit()
+                print("✓ Columna owner_facebook_user_id agregada a candidatos")
+    except Exception as e:
+        print(f"Migración candidatos.owner_facebook_user_id (puede ser normal si ya existe): {e}")
+
     # Crear categorías de intereses predeterminadas
     session = SessionLocal()
     try:

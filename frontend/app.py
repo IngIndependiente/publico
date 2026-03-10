@@ -309,7 +309,7 @@ def crear_contenido():
             # Header
             dbc.Row([
                 dbc.Col([
-                    html.H1("Dashboard - Agente CRM", className="display-4"),
+                    html.H1("Dashboard - Agente CRM", className="display-4", id="texto-dashboard-titulo"),
                     html.P(
                         "Sistema de análisis de conversaciones y gestión de contactos ciudadanos",
                         className="lead",
