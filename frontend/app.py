@@ -466,43 +466,43 @@ def crear_contenido():
             ], id="modal-whatsapp-config", is_open=False),
 
             # Modal configuración Token de Instagram
-            dbc.Modal([
-                dbc.ModalHeader(dbc.ModalTitle([
-                    html.I(className="fab fa-instagram me-2"), "Token de Instagram"
-                ])),
-                dbc.ModalBody([
-                    html.P(
-                        "Ingresa el token de acceso de Instagram (IGAAU...). "
-                        "Se usa para leer mensajes de Instagram DM.",
-                        className="text-muted mb-3"
-                    ),
-                    dbc.Label("Instagram Access Token:"),
-                    dbc.Textarea(
-                        id="input-instagram-token",
-                        placeholder="IGAAUd...",
-                        rows=3,
-                        className="mb-2",
-                        style={"fontFamily": "monospace", "fontSize": "0.8rem"}
-                    ),
-                    html.Div([
-                        html.I(className="fas fa-info-circle me-2 text-warning"),
-                        html.Small([
-                            "Este token expira. Genera uno nuevo en ",
-                            html.A(
-                                "Graph API Explorer",
-                                href="https://developers.facebook.com/tools/explorer/",
-                                target="_blank"
-                            ),
-                            " con el permiso instagram_manage_messages."
-                        ], className="text-muted")
-                    ], className="alert alert-warning py-2 px-3 mb-2"),
-                    html.Div(id="instagram-token-status", className="mt-2")
-                ]),
-                dbc.ModalFooter([
-                    dbc.Button("Cancelar", id="btn-instagram-token-cancel", color="secondary", className="me-2"),
-                    dbc.Button("Guardar", id="btn-instagram-token-save", color="danger")
-                ]),
-            ], id="modal-instagram-token", is_open=False),
+            # dbc.Modal([
+            #     dbc.ModalHeader(dbc.ModalTitle([
+            #         html.I(className="fab fa-instagram me-2"), "Token de Instagram"
+            #     ])),
+            #     dbc.ModalBody([
+            #         html.P(
+            #             "Ingresa el token de acceso de Instagram (IGAAU...). "
+            #             "Se usa para leer mensajes de Instagram DM.",
+            #             className="text-muted mb-3"
+            #         ),
+            #         dbc.Label("Instagram Access Token:"),
+            #         dbc.Textarea(
+            #             id="input-instagram-token",
+            #             placeholder="IGAAUd...",
+            #             rows=3,
+            #             className="mb-2",
+            #             style={"fontFamily": "monospace", "fontSize": "0.8rem"}
+            #         ),
+            #         html.Div([
+            #             html.I(className="fas fa-info-circle me-2 text-warning"),
+            #             html.Small([
+            #                 "Este token expira. Genera uno nuevo en ",
+            #                 html.A(
+            #                     "Graph API Explorer",
+            #                     href="https://developers.facebook.com/tools/explorer/",
+            #                     target="_blank"
+            #                 ),
+            #                 " con el permiso instagram_manage_messages."
+            #             ], className="text-muted")
+            #         ], className="alert alert-warning py-2 px-3 mb-2"),
+            #         html.Div(id="instagram-token-status", className="mt-2")
+            #     ]),
+            #     dbc.ModalFooter([
+            #         dbc.Button("Cancelar", id="btn-instagram-token-cancel", color="secondary", className="me-2"),
+            #         dbc.Button("Guardar", id="btn-instagram-token-save", color="danger")
+            #     ]),
+            # ], id="modal-instagram-token", is_open=False),
 
             dbc.Modal([
                 dbc.ModalHeader(dbc.ModalTitle("Seleccionar Páginas a Conectar")),
@@ -1612,7 +1612,10 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
 @app.callback(
     [Output("store-sync-candidatos", "data"),
      Output({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "children"),
-     Output("interval-sync-candidato", "disabled")],
+     Output("interval-sync-candidato", "disabled"),
+     Output("modal-loading-sync", "is_open"),
+     Output("modal-loading-sync-bar", "children"),
+     Output("modal-loading-sync-msg", "children")],
     Input({"type": "btn-sincronizar-candidato", "index": dash.dependencies.ALL}, "n_clicks"),
     [State("store-sync-candidatos", "data"),
      State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id"),
@@ -1686,13 +1689,20 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates
             statuses.append(dash.no_update)
 
     still_running = any(v.get("state") == "running" for v in store_data.values())
-    return store_data, statuses, not still_running
+    # Abrir modal inmediatamente al iniciar
+    if still_running:
+        modal_bar = dbc.Progress(value=10, striped=True, animated=True, style={"height": "10px"})
+        return store_data, statuses, not still_running, True, modal_bar, "Iniciando sincronización…"
+    return store_data, statuses, not still_running, False, None, ""
 
 
 @app.callback(
     [Output("store-sync-candidatos", "data", allow_duplicate=True),
      Output({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "children", allow_duplicate=True),
-     Output("interval-sync-candidato", "disabled", allow_duplicate=True)],
+     Output("interval-sync-candidato", "disabled", allow_duplicate=True),
+     Output("modal-loading-sync", "is_open", allow_duplicate=True),
+     Output("modal-loading-sync-bar", "children", allow_duplicate=True),
+     Output("modal-loading-sync-msg", "children", allow_duplicate=True)],
     Input("interval-sync-candidato", "n_intervals"),
     [State("store-sync-candidatos", "data"),
      State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id")],
@@ -1772,51 +1782,38 @@ def poll_sync_candidatos(n, store_data, all_ids):
             statuses.append(dash.no_update)
 
     still_running = any(v.get("state") == "running" for v in new_store.values())
-    return new_store, statuses, not still_running
 
-
-@app.callback(
-    [Output("modal-loading-sync", "is_open"),
-     Output("modal-loading-sync-bar", "children"),
-     Output("modal-loading-sync-msg", "children")],
-    Input("store-sync-candidatos", "data"),
-    prevent_initial_call=True
-)
-def controlar_modal_loading_sync(sync_store):
-    """Abre y actualiza el modal de carga global cuando hay una sincronización en curso."""
-    if not sync_store:
-        return False, None, ""
-
-    running = [(k, v) for k, v in sync_store.items() if v.get("state") == "running"]
-    if not running:
-        return False, None, ""
-
-    _, job = running[0]
-    fb_prog  = job.get("fb_progress", 0)
-    fb_total = job.get("fb_total", 0)
-    ig_prog  = job.get("ig_progress", 0)
-    ig_total = job.get("ig_total", 0)
-    phase    = job.get("phase", "")
-    msg      = job.get("message", "Sincronizando...")
-
-    if fb_total > 0 or ig_total > 0:
-        fb_pct = int(fb_prog / fb_total * 50) if fb_total > 0 else (50 if phase == "instagram" else 5)
-        ig_pct = int(ig_prog / ig_total * 50) if ig_total > 0 else 0
-        if phase == "facebook" and fb_pct == 0:
-            fb_pct = 5
-        fb_label = f"FB {fb_prog}/{fb_total}" if fb_pct > 12 else ""
-        ig_label = f"IG {ig_prog}/{ig_total}" if ig_pct > 12 else ""
-        bar = dbc.Progress([
-            dbc.Progress(value=fb_pct, color="primary", bar=True, label=fb_label),
-            dbc.Progress(value=ig_pct, color="danger", bar=True, label=ig_label),
-        ], style={"height": "10px"})
+    # Calcular estado del modal desde el job en curso (o cerrar si terminó)
+    running_jobs = [(k, v) for k, v in new_store.items() if v.get("state") == "running"]
+    if running_jobs:
+        _, job = running_jobs[0]
+        fb_prog  = job.get("fb_progress", 0)
+        fb_total = job.get("fb_total", 0)
+        ig_prog  = job.get("ig_progress", 0)
+        ig_total = job.get("ig_total", 0)
+        phase    = job.get("phase", "")
+        modal_msg = job.get("message", "Sincronizando...")
+        if fb_total > 0 or ig_total > 0:
+            fb_pct = int(fb_prog / fb_total * 50) if fb_total > 0 else (50 if phase == "instagram" else 5)
+            ig_pct = int(ig_prog / ig_total * 50) if ig_total > 0 else 0
+            if phase == "facebook" and fb_pct == 0:
+                fb_pct = 5
+            fb_label = f"FB {fb_prog}/{fb_total}" if fb_pct > 12 else ""
+            ig_label = f"IG {ig_prog}/{ig_total}" if ig_pct > 12 else ""
+            modal_bar = dbc.Progress([
+                dbc.Progress(value=fb_pct, color="primary", bar=True, label=fb_label),
+                dbc.Progress(value=ig_pct, color="danger", bar=True, label=ig_label),
+            ], style={"height": "10px"})
+        else:
+            prog  = job.get("progress", 0)
+            total = job.get("total", 0)
+            pct = max(10, int(prog / total * 100)) if total > 0 else 15
+            modal_bar = dbc.Progress(value=pct, striped=True, animated=True, style={"height": "10px"})
+        modal_open = True
     else:
-        progress = job.get("progress", 0)
-        total    = job.get("total", 0)
-        pct = max(10, int(progress / total * 100)) if total > 0 else 15
-        bar = dbc.Progress(value=pct, striped=True, animated=True, style={"height": "10px"})
+        modal_open, modal_bar, modal_msg = False, None, ""
 
-    return True, bar, msg
+    return new_store, statuses, not still_running, modal_open, modal_bar, modal_msg
 
 
 # Callback para abrir modal de configuración WhatsApp
@@ -2204,5 +2201,5 @@ if __name__ == "__main__":
     app.run(
         host=config.FRONTEND_HOST,
         port=config.FRONTEND_PORT,
-        debug=config.DEBUG
+        debug=True
     )
