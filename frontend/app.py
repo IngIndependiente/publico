@@ -24,6 +24,81 @@ from backend import control
 from backend import config
 from dash.exceptions import PreventUpdate
 
+# === Traducciones / Translations ===
+TRANSLATIONS = {
+    "es": {
+        "filtros": "Filtros", "fecha_desde": "Fecha Desde", "fecha_hasta": "Fecha Hasta",
+        "genero_label": "Género", "seleccionar_genero": "Seleccionar género",
+        "rango_edad": "Rango de Edad", "intereses_label": "Intereses",
+        "seleccionar_intereses": "Seleccionar intereses", "ubicacion_label": "Ubicación",
+        "ubicacion_placeholder": "Ciudad, región...",
+        "buscar": "Buscar", "limpiar": "Limpiar", "exportar_csv": "Exportar CSV",
+        "sync_btn": "Sync", "confirmar_sync": "Confirmar sincronización",
+        "password_placeholder": "Contraseña", "sync_logs_label": "Sync logs",
+        "cancelar": "Cancelar", "iniciar_sync": "Iniciar Sync", "cambiar_idioma_btn": "EN",
+        "dashboard_titulo": "Dashboard - Agente CRM",
+        "dashboard_subtitulo": "Sistema de análisis de conversaciones y gestión de contactos ciudadanos",
+        "conexion_fb_header": "Conexión con Facebook/Instagram",
+        "conexion_fb_desc": "Conecta tu página de Facebook e Instagram Business para recibir mensajes automáticamente.",
+        "conectar_fb_btn": "Conectar Facebook/Instagram", "paginas_conectadas": "Páginas Conectadas:",
+        "stat_total_personas": "Total Personas", "stat_resultados": "Resultados",
+        "stat_conversaciones": "Conversaciones", "stat_ultima_act": "Última Actualización",
+        "grafico_genero_header": "Distribución por Género", "grafico_intereses_header": "Intereses más Comunes",
+        "grafico_genero_titulo": "Distribución por Género (Filtrado)",
+        "grafico_intereses_titulo": "Intereses más Comunes (Filtrado)",
+        "grafico_cantidad": "Cantidad de Personas", "grafico_categoria": "Categoría",
+        "resultados_busqueda_header": "Resultados de Búsqueda",
+        "tabla_accion": "Acción", "tabla_fecha": "Fecha", "tabla_nombre": "Nombre",
+        "tabla_resumen": "Resumen Conv.", "tabla_origen": "Origen", "tabla_evento": "Evento",
+        "tabla_edad": "Edad", "tabla_genero": "Género", "tabla_telefono": "Teléfono",
+        "tabla_email": "Email", "tabla_ubicacion": "Ubicación", "tabla_intereses": "Intereses",
+        "tabla_sin_resultados": "No hay resultados para mostrar",
+        "tabla_sin_identificar": "Sin identificar", "tabla_ver": "Ver",
+        "cand_sincronizar": "Sincronizar", "cand_config": "Config",
+        "cand_re_analizar": "Re-analizar todo",
+        "cand_sin_paginas": "No hay páginas conectadas. Haz clic en el botón para conectar.",
+        "footer_privacidad": "Política de Privacidad", "footer_logs": "Logs",
+    },
+    "en": {
+        "filtros": "Filters", "fecha_desde": "From Date", "fecha_hasta": "To Date",
+        "genero_label": "Gender", "seleccionar_genero": "Select gender",
+        "rango_edad": "Age Range", "intereses_label": "Interests",
+        "seleccionar_intereses": "Select interests", "ubicacion_label": "Location",
+        "ubicacion_placeholder": "City, region...",
+        "buscar": "Search", "limpiar": "Clear", "exportar_csv": "Export CSV",
+        "sync_btn": "Sync", "confirmar_sync": "Confirm Sync",
+        "password_placeholder": "Password", "sync_logs_label": "Sync logs",
+        "cancelar": "Cancel", "iniciar_sync": "Start Sync", "cambiar_idioma_btn": "ES",
+        "dashboard_titulo": "Dashboard - CRM Agent",
+        "dashboard_subtitulo": "Conversation analysis and citizen contact management system",
+        "conexion_fb_header": "Facebook/Instagram Connection",
+        "conexion_fb_desc": "Connect your Facebook and Instagram Business page to automatically receive messages.",
+        "conectar_fb_btn": "Connect Facebook/Instagram", "paginas_conectadas": "Connected Pages:",
+        "stat_total_personas": "Total People", "stat_resultados": "Results",
+        "stat_conversaciones": "Conversations", "stat_ultima_act": "Last Update",
+        "grafico_genero_header": "Gender Distribution", "grafico_intereses_header": "Most Common Interests",
+        "grafico_genero_titulo": "Gender Distribution (Filtered)",
+        "grafico_intereses_titulo": "Most Common Interests (Filtered)",
+        "grafico_cantidad": "Number of People", "grafico_categoria": "Category",
+        "resultados_busqueda_header": "Search Results",
+        "tabla_accion": "Action", "tabla_fecha": "Date", "tabla_nombre": "Name",
+        "tabla_resumen": "Conv. Summary", "tabla_origen": "Source", "tabla_evento": "Event",
+        "tabla_edad": "Age", "tabla_genero": "Gender", "tabla_telefono": "Phone",
+        "tabla_email": "Email", "tabla_ubicacion": "Location", "tabla_intereses": "Interests",
+        "tabla_sin_resultados": "No results to display",
+        "tabla_sin_identificar": "Unidentified", "tabla_ver": "View",
+        "cand_sincronizar": "Sync", "cand_config": "Config",
+        "cand_re_analizar": "Re-analyze all",
+        "cand_sin_paginas": "No connected pages. Click the button to connect.",
+        "footer_privacidad": "Privacy Policy", "footer_logs": "Logs",
+    },
+}
+
+def t(key, lang="es"):
+    """Retorna la traducción de la clave para el idioma dado."""
+    return TRANSLATIONS.get(lang or "es", TRANSLATIONS["es"]).get(key, key)
+
+
 # URL del backend
 BACKEND_URL = config.BACKEND_URL
 
@@ -67,18 +142,18 @@ def crear_sidebar():
     """Crear barra lateral con filtros."""
     return html.Div(
         [
-            html.H2("Filtros", className="display-6"),
+            html.H2("Filtros", className="display-6", id="sidebar-titulo"),
             html.Hr(),
             
             # Fecha
-            html.Label("Fecha Desde", className="fw-bold"),
+            html.Label("Fecha Desde", className="fw-bold", id="label-fecha-desde"),
             dbc.Input(
                 id="filtro-fecha-inicio",
                 type="date",
                 placeholder="YYYY-MM-DD",
                 className="mb-2"
             ),
-            html.Label("Fecha Hasta", className="fw-bold"),
+            html.Label("Fecha Hasta", className="fw-bold", id="label-fecha-hasta"),
             dbc.Input(
                 id="filtro-fecha-fin",
                 type="date",
@@ -89,7 +164,7 @@ def crear_sidebar():
             html.Hr(),
             
             # Género
-            html.Label("Género", className="fw-bold mt-3"),
+            html.Label("Género", className="fw-bold mt-3", id="label-genero-filtro"),
             dcc.Dropdown(
                 id="filtro-genero",
                 options=[{"label": g, "value": g} for g in config.GENEROS],
@@ -99,7 +174,7 @@ def crear_sidebar():
             ),
             
             # Edad
-            html.Label("Rango de Edad", className="fw-bold mt-3"),
+            html.Label("Rango de Edad", className="fw-bold mt-3", id="label-rango-edad"),
             dbc.Row([
                 dbc.Col([
                     dbc.Input(
@@ -122,7 +197,7 @@ def crear_sidebar():
             ], className="mb-3"),
             
             # Intereses
-            html.Label("Intereses", className="fw-bold mt-3"),
+            html.Label("Intereses", className="fw-bold mt-3", id="label-intereses-filtro"),
             dcc.Dropdown(
                 id="filtro-intereses",
                 options=[{"label": i, "value": i} for i in config.CATEGORIAS_INTERES],
@@ -132,7 +207,7 @@ def crear_sidebar():
             ),
             
             # Ubicación
-            html.Label("Ubicación", className="fw-bold mt-3"),
+            html.Label("Ubicación", className="fw-bold mt-3", id="label-ubicacion-filtro"),
             dbc.Input(
                 id="filtro-ubicacion",
                 type="text",
@@ -184,7 +259,7 @@ def crear_sidebar():
                     ]),
                         # Modal para contraseña
                         dbc.Modal([
-                            dbc.ModalHeader("Confirmar sincronización"),
+                            dbc.ModalHeader("Confirmar sincronización", id="modal-sync-header"),
                             dbc.ModalBody([
                                 dbc.Input(id="input-sync-password", type="password", placeholder="Contraseña"),
                                 html.Div(id="sync-modal-status", className="mt-2"),
@@ -196,7 +271,7 @@ def crear_sidebar():
                                     style={"height": "20px", "display": "none"},
                                     className="mt-2 mb-1"
                                 ),
-                                html.H6("Sync logs", className="mt-3"),
+                                html.H6("Sync logs", className="mt-3", id="sync-logs-label"),
                                 html.Pre(id="sync-log", style={
                                     'maxHeight': '300px',
                                     'overflowY': 'auto',
@@ -213,6 +288,13 @@ def crear_sidebar():
                             ])
                         ], id="modal-sync", is_open=False),
                                 html.Hr(className="mt-4"),
+                                dbc.Button(
+                                    [html.I(className="fas fa-globe me-2"), "EN"],
+                                    id="btn-idioma",
+                                    color="outline-secondary",
+                                    size="sm",
+                                    className="w-100 mb-2",
+                                ),
                                 html.Div(id="info-exportacion", className="small text-muted"),
         ],
         style=SIDEBAR_STYLE,
@@ -227,10 +309,11 @@ def crear_contenido():
             # Header
             dbc.Row([
                 dbc.Col([
-                    html.H1("Dashboard - Agente Político", className="display-4"),
+                    html.H1("Dashboard - Agente CRM", className="display-4"),
                     html.P(
                         "Sistema de análisis de conversaciones y gestión de contactos ciudadanos",
-                        className="lead"
+                        className="lead",
+                        id="texto-dashboard-subtitulo"
                     ),
                     html.Hr(),
                 ]),
@@ -242,18 +325,19 @@ def crear_contenido():
                     dbc.Card([
                         dbc.CardHeader([
                             html.I(className="fab fa-facebook me-2"),
-                            "Conexión con Facebook/Instagram"
+                            html.Span("Conexión con Facebook/Instagram", id="texto-ch-conexion-fb")
                         ]),
                         dbc.CardBody([
                             html.P(
                                 "Conecta tu página de Facebook e Instagram Business para recibir mensajes automáticamente.",
-                                className="text-muted"
+                                className="text-muted",
+                                id="texto-desc-fb"
                             ),
                             html.A(
                                 dbc.Button(
                                     [
                                         html.I(className="fab fa-facebook me-2"),
-                                        "Conectar Facebook/Instagram"
+                                        html.Span("Conectar Facebook/Instagram", id="texto-btn-conectar-fb")
                                     ],
                                     color="primary",
                                     size="lg",
@@ -263,7 +347,7 @@ def crear_contenido():
                                 id="btn-conectar-facebook"
                             ),
                             html.Hr(),
-                            html.H6("Páginas Conectadas:", className="fw-bold"),
+                            html.H6("Páginas Conectadas:", className="fw-bold", id="texto-paginas-conectadas"),
                             html.Div(id="lista-candidatos-conectados")
                         ])
                     ], className="mb-4")
@@ -276,7 +360,7 @@ def crear_contenido():
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H4("Total Personas", className="card-title"),
+                            html.H4("Total Personas", className="card-title", id="label-stat-total-personas"),
                             html.H2(id="stat-total-personas", className="text-primary"),
                         ])
                     ], className="mb-3")
@@ -285,7 +369,7 @@ def crear_contenido():
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H4("Resultados", className="card-title"),
+                            html.H4("Resultados", className="card-title", id="label-stat-resultados"),
                             html.H2(id="stat-resultados", className="text-success"),
                         ])
                     ], className="mb-3")
@@ -294,7 +378,7 @@ def crear_contenido():
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H4("Conversaciones", className="card-title"),
+                            html.H4("Conversaciones", className="card-title", id="label-stat-conversaciones"),
                             html.H2(id="stat-conversaciones", className="text-info"),
                         ])
                     ], className="mb-3")
@@ -303,7 +387,7 @@ def crear_contenido():
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H4("Última Actualización", className="card-title"),
+                            html.H4("Última Actualización", className="card-title", id="label-stat-ultima-act"),
                             html.P(id="stat-actualizacion", className="mb-0"),
                         ])
                     ], className="mb-3")
@@ -314,7 +398,7 @@ def crear_contenido():
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Distribución por Género"),
+                        dbc.CardHeader(html.Span("Distribución por Género", id="ch-dist-genero")),
                         dbc.CardBody([
                             dcc.Graph(id="grafico-genero")
                         ])
@@ -323,7 +407,7 @@ def crear_contenido():
                 
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Intereses más Comunes"),
+                        dbc.CardHeader(html.Span("Intereses más Comunes", id="ch-intereses-comunes")),
                         dbc.CardBody([
                             dcc.Graph(id="grafico-intereses")
                         ])
@@ -336,7 +420,7 @@ def crear_contenido():
                 dbc.Col([
                     dbc.Card([
                         dbc.CardHeader([
-                            html.H5("Resultados de Búsqueda", className="mb-0")
+                            html.H5("Resultados de Búsqueda", className="mb-0", id="ch-resultados-busqueda")
                         ]),
                         dbc.CardBody([
                             html.Div(id="tabla-resultados")
@@ -453,6 +537,8 @@ def crear_contenido():
             dcc.Store(id="store-candidato-whatsapp-id"),  # Para guardar el candidato que está configurando WhatsApp
             dcc.Store(id="store-facebook-pages"),  # Para guardar páginas de Facebook
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
+            dcc.Store(id="store-facebook-user-id"),  # facebook_user_id del usuario autenticado
+            dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Interval(id="interval-sync-poll", interval=2000, n_intervals=0, disabled=True),
             # Interval para actualización automática
             dcc.Interval(
@@ -648,7 +734,8 @@ app.layout = html.Div([
 @app.callback(
     [Output('store-facebook-pages', 'data'),
      Output('url', 'pathname'),
-     Output('url', 'search')],
+     Output('url', 'search'),
+     Output('store-facebook-user-id', 'data')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
@@ -670,9 +757,10 @@ def cargar_paginas_oauth(href):
         if response.ok:
             data = response.json()
             pages = data.get('pages', [])
+            facebook_user_id = data.get('facebook_user_id')
             if pages:
                 # Limpiar el token de la URL (pathname y search)
-                return pages, '/', ''
+                return pages, '/', '', facebook_user_id
     except Exception as e:
         print(f"Error recuperando sesión OAuth: {e}")
     
@@ -707,10 +795,12 @@ def actualizar_estadisticas(n):
 @app.callback(
     [Output("grafico-genero", "figure"),
      Output("grafico-intereses", "figure")],
-    [Input("store-stats-filtradas", "data")]
+    [Input("store-stats-filtradas", "data"),
+     Input("store-idioma", "data")]
 )
-def actualizar_graficos(stats):
+def actualizar_graficos(stats, lang):
     """Actualizar gráficos de estadísticas."""
+    lang = lang or "es"
     if not stats:
         # Default empty fig
         return {}, {}
@@ -723,7 +813,7 @@ def actualizar_graficos(stats):
         fig_genero = px.pie(
             values=list(genero_data.values()),
             names=list(genero_data.keys()),
-            title="Distribución por Género (Filtrado)",
+            title=t("grafico_genero_titulo", lang),
             hole=0.3
         )
         fig_genero.update_layout(margin=dict(l=20, r=20, t=40, b=20))
@@ -737,8 +827,8 @@ def actualizar_graficos(stats):
             x=list(intereses_data.values()),
             y=list(intereses_data.keys()),
             orientation='h',
-            title="Intereses más Comunes (Filtrado)",
-            labels={"x": "Cantidad de Personas", "y": "Categoría"}
+            title=t("grafico_intereses_titulo", lang),
+            labels={"x": t("grafico_cantidad", lang), "y": t("grafico_categoria", lang)}
         )
         fig_intereses.update_layout(margin=dict(l=20, r=20, t=40, b=20))
     
@@ -758,10 +848,11 @@ def actualizar_graficos(stats):
      State("filtro-edad-min", "value"),
      State("filtro-edad-max", "value"),
      State("filtro-intereses", "value"),
-     State("filtro-ubicacion", "value")],
+     State("filtro-ubicacion", "value"),
+     State("store-facebook-user-id", "data")],
     prevent_initial_call=False
 )
-def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion):
+def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
     """Buscar personas según filtros."""
     # Construir payload
     payload = {}
@@ -780,6 +871,8 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
         payload["intereses"] = intereses
     if ubicacion and ubicacion.strip():
         payload["ubicacion"] = ubicacion
+    if facebook_user_id:
+        payload["facebook_user_id"] = facebook_user_id
     
     try:
         response = requests.post(
@@ -816,13 +909,15 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
 
 @app.callback(
     Output("tabla-resultados", "children"),
-    [Input("store-datos-personas", "data")]
+    [Input("store-datos-personas", "data"),
+     Input("store-idioma", "data")]
 )
-def actualizar_tabla(personas):
+def actualizar_tabla(personas, lang):
     """Actualizar tabla de resultados."""
+    lang = lang or "es"
     if not personas:
         return html.Div(
-            dbc.Alert("No hay resultados para mostrar", color="info"),
+            dbc.Alert(t("tabla_sin_resultados", lang), color="info"),
             className="text-center"
         )
     
@@ -830,7 +925,7 @@ def actualizar_tabla(personas):
     rows = []
     for p in personas:
         # Formatear nombre con usuario
-        nombre = p.get("nombre_completo") or "Sin identificar"
+        nombre = p.get("nombre_completo") or t("tabla_sin_identificar", lang)
         usuario = p.get("facebook_username") or p.get("instagram_username")
         
         if usuario:
@@ -844,7 +939,7 @@ def actualizar_tabla(personas):
         row = html.Tr([
             html.Td(
                 dbc.Button(
-                    [html.I(className="fas fa-comments me-1"), "Ver"],
+                    [html.I(className="fas fa-comments me-1"), t("tabla_ver", lang)],
                     id={"type": "btn-ver-conversacion", "index": analisis_id},
                     color="primary" if analisis_id else "secondary",
                     size="sm",
@@ -856,6 +951,15 @@ def actualizar_tabla(personas):
             html.Td(datetime.fromisoformat(p["fecha_ultimo_contacto"]).strftime("%Y-%m-%d %H:%M") if p.get("fecha_ultimo_contacto") else "N/A"),
             html.Td(nombre_display),
             html.Td(p.get("resumen_conversacion") or "N/A", style={'maxWidth': '300px'}),
+            html.Td(
+                dbc.Badge(
+                    (p.get("plataforma") or "N/A").capitalize(),
+                    color={"messenger": "primary", "instagram": "danger", "whatsapp": "success"}.get(
+                        (p.get("plataforma") or "").lower(), "secondary"
+                    ),
+                    className="text-white"
+                )
+            ),
             html.Td([
                 dcc.Dropdown(
                     id={"type": "dropdown-evento", "index": analisis_id},
@@ -877,17 +981,18 @@ def actualizar_tabla(personas):
     tabla = dbc.Table(
         [
             html.Thead(html.Tr([
-                html.Th("Acción"),
-                html.Th("Fecha"),
-                html.Th("Nombre"),
-                html.Th("Resumen Conv."),
-                html.Th("Evento"),
-                html.Th("Edad"),
-                html.Th("Género"),
-                html.Th("Teléfono"),
-                html.Th("Email"),
-                html.Th("Ubicación"),
-                html.Th("Intereses"),
+                html.Th(t("tabla_accion", lang)),
+                html.Th(t("tabla_fecha", lang)),
+                html.Th(t("tabla_nombre", lang)),
+                html.Th(t("tabla_resumen", lang)),
+                html.Th(t("tabla_origen", lang)),
+                html.Th(t("tabla_evento", lang)),
+                html.Th(t("tabla_edad", lang)),
+                html.Th(t("tabla_genero", lang)),
+                html.Th(t("tabla_telefono", lang)),
+                html.Th(t("tabla_email", lang)),
+                html.Th(t("tabla_ubicacion", lang)),
+                html.Th(t("tabla_intereses", lang)),
             ])),
             html.Tbody(rows)
         ],
@@ -1371,17 +1476,19 @@ def guardar_evento_personalizado(btn_guardar, btn_cancelar, nombre_evento, anali
 
 @app.callback(
     Output("lista-candidatos-conectados", "children"),
-    [Input("interval-actualizacion", "n_intervals")]
+    [Input("interval-actualizacion", "n_intervals"),
+     Input("store-idioma", "data")]
 )
-def cargar_candidatos_conectados(n):
+def cargar_candidatos_conectados(n, lang):
     """Cargar lista de candidatos conectados."""
+    lang = lang or "es"
     try:
         response = requests.get(f"{BACKEND_URL}/api/candidatos", timeout=5)
         if response.ok:
             candidatos = response.json()
             
             if not candidatos:
-                return dbc.Alert("No hay páginas conectadas. Haz clic en el botón para conectar.", color="warning", className="mt-2")
+                return dbc.Alert(t("cand_sin_paginas", lang), color="warning", className="mt-2")
             
             items = []
             for candidato in candidatos:
@@ -1409,7 +1516,7 @@ def cargar_candidatos_conectados(n):
                         dbc.Row([
                             dbc.Col([
                                 dbc.Button(
-                                    [html.I(className="fas fa-sync-alt me-2"), "Sincronizar"],
+                                    [html.I(className="fas fa-sync-alt me-2"), t("cand_sincronizar", lang)],
                                     id={"type": "btn-sincronizar-candidato", "index": candidato_id},
                                     color="info",
                                     size="sm",
@@ -1418,7 +1525,7 @@ def cargar_candidatos_conectados(n):
                             ], width=6),
                             dbc.Col([
                                 dbc.Button(
-                                    [html.I(className="fab fa-whatsapp me-2"), "Config"],
+                                    [html.I(className="fab fa-whatsapp me-2"), t("cand_config", lang)],
                                     id={"type": "btn-config-whatsapp", "index": candidato_id},
                                     color="success",
                                     size="sm",
@@ -1429,7 +1536,7 @@ def cargar_candidatos_conectados(n):
                         ]),
                         dbc.Switch(
                             id={"type": "switch-force-reprocess", "index": candidato_id},
-                            label="Re-analizar todo",
+                            label=t("cand_re_analizar", lang),
                             value=False,
                             className="mt-2 small"
                         ),
@@ -1871,6 +1978,99 @@ def toggle_sync_log(status):
 )
 def toggle_modal_privacidad(abrir, cerrar, is_open):
     return not is_open
+
+
+# === Callbacks de Idioma ===
+
+@app.callback(
+    Output("store-idioma", "data"),
+    Input("btn-idioma", "n_clicks"),
+    State("store-idioma", "data"),
+    prevent_initial_call=True
+)
+def cambiar_idioma(n_clicks, lang):
+    """Alternar entre español e inglés."""
+    return "en" if (lang or "es") == "es" else "es"
+
+
+@app.callback(
+    [Output("sidebar-titulo", "children"),
+     Output("label-fecha-desde", "children"),
+     Output("label-fecha-hasta", "children"),
+     Output("label-genero-filtro", "children"),
+     Output("filtro-genero", "placeholder"),
+     Output("label-rango-edad", "children"),
+     Output("label-intereses-filtro", "children"),
+     Output("filtro-intereses", "placeholder"),
+     Output("label-ubicacion-filtro", "children"),
+     Output("filtro-ubicacion", "placeholder"),
+     Output("btn-buscar", "children"),
+     Output("btn-limpiar", "children"),
+     Output("btn-exportar", "children"),
+     Output("btn-sync", "children"),
+     Output("modal-sync-header", "children"),
+     Output("input-sync-password", "placeholder"),
+     Output("sync-logs-label", "children"),
+     Output("btn-sync-cancel", "children"),
+     Output("btn-sync-confirm", "children"),
+     Output("btn-idioma", "children"),
+     Output("texto-dashboard-titulo", "children"),
+     Output("texto-dashboard-subtitulo", "children"),
+     Output("texto-ch-conexion-fb", "children"),
+     Output("texto-desc-fb", "children"),
+     Output("texto-btn-conectar-fb", "children"),
+     Output("texto-paginas-conectadas", "children"),
+     Output("label-stat-total-personas", "children"),
+     Output("label-stat-resultados", "children"),
+     Output("label-stat-conversaciones", "children"),
+     Output("label-stat-ultima-act", "children"),
+     Output("ch-dist-genero", "children"),
+     Output("ch-intereses-comunes", "children"),
+     Output("ch-resultados-busqueda", "children"),
+     Output("btn-abrir-privacidad", "children"),
+     Output("btn-abrir-logs", "children")],
+    Input("store-idioma", "data")
+)
+def actualizar_textos_ui(lang):
+    """Actualizar todos los textos de la interfaz según el idioma seleccionado."""
+    lang = lang or "es"
+    return [
+        t("filtros", lang),
+        t("fecha_desde", lang),
+        t("fecha_hasta", lang),
+        t("genero_label", lang),
+        t("seleccionar_genero", lang),
+        t("rango_edad", lang),
+        t("intereses_label", lang),
+        t("seleccionar_intereses", lang),
+        t("ubicacion_label", lang),
+        t("ubicacion_placeholder", lang),
+        [html.I(className="fas fa-search me-2"), t("buscar", lang)],
+        [html.I(className="fas fa-redo me-2"), t("limpiar", lang)],
+        [html.I(className="fas fa-download me-2"), t("exportar_csv", lang)],
+        [html.I(className="fas fa-sync me-2"), t("sync_btn", lang)],
+        t("confirmar_sync", lang),
+        t("password_placeholder", lang),
+        t("sync_logs_label", lang),
+        t("cancelar", lang),
+        t("iniciar_sync", lang),
+        [html.I(className="fas fa-globe me-2"), t("cambiar_idioma_btn", lang)],
+        t("dashboard_titulo", lang),
+        t("dashboard_subtitulo", lang),
+        t("conexion_fb_header", lang),
+        t("conexion_fb_desc", lang),
+        t("conectar_fb_btn", lang),
+        t("paginas_conectadas", lang),
+        t("stat_total_personas", lang),
+        t("stat_resultados", lang),
+        t("stat_conversaciones", lang),
+        t("stat_ultima_act", lang),
+        t("grafico_genero_header", lang),
+        t("grafico_intereses_header", lang),
+        t("resultados_busqueda_header", lang),
+        t("footer_privacidad", lang),
+        [html.I(className="fas fa-terminal me-1"), t("footer_logs", lang)],
+    ]
 
 
 if __name__ == "__main__":
