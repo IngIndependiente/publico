@@ -182,6 +182,7 @@ class CandidatoService:
                         'facebook_token_expiration': candidato.facebook_token_expiration,
                         'instagram_business_account_id': candidato.instagram_business_account_id,
                         'instagram_username': candidato.instagram_username,
+                        'instagram_access_token': candidato.instagram_access_token,
                         'whatsapp_phone_number_id': candidato.whatsapp_phone_number_id,
                         'whatsapp_business_account_id': candidato.whatsapp_business_account_id,
                         'whatsapp_phone_number': candidato.whatsapp_phone_number,
