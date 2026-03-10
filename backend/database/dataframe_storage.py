@@ -39,6 +39,8 @@ class DataFrameStorage:
             # Migración: agregar columna owner_facebook_user_id si no existe en parquet antiguo
             if 'owner_facebook_user_id' not in self.candidatos_df.columns:
                 self.candidatos_df['owner_facebook_user_id'] = None
+            if 'instagram_access_token' not in self.candidatos_df.columns:
+                self.candidatos_df['instagram_access_token'] = None
             self.personas_df = self._load_or_create_df(PERSONAS_FILE, self._get_personas_schema())
             # Migración: agregar columna candidato_id si no existe en parquet antiguo
             if 'candidato_id' not in self.personas_df.columns:
@@ -82,6 +84,7 @@ class DataFrameStorage:
             'facebook_token_expiration': pd.Series(dtype='datetime64[ns]'),
             'instagram_business_account_id': pd.Series(dtype='object'),
             'instagram_username': pd.Series(dtype='object'),
+            'instagram_access_token': pd.Series(dtype='object'),
             'whatsapp_phone_number_id': pd.Series(dtype='object'),
             'whatsapp_business_account_id': pd.Series(dtype='object'),
             'whatsapp_phone_number': pd.Series(dtype='object'),
