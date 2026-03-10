@@ -36,6 +36,9 @@ class DataFrameStorage:
         with self._io_lock:
             self.logger.debug("Cargando dataframes desde %s", config.DATA_DIR)
             self.candidatos_df = self._load_or_create_df(CANDIDATOS_FILE, self._get_candidatos_schema())
+            # Migración: agregar columna owner_facebook_user_id si no existe en parquet antiguo
+            if 'owner_facebook_user_id' not in self.candidatos_df.columns:
+                self.candidatos_df['owner_facebook_user_id'] = None
             self.personas_df = self._load_or_create_df(PERSONAS_FILE, self._get_personas_schema())
             self.conversaciones_df = self._load_or_create_df(CONVERSACIONES_FILE, self._get_conversaciones_schema())
             self.analisis_df = self._load_or_create_df(ANALISIS_FILE, self._get_analisis_schema())
@@ -80,6 +83,7 @@ class DataFrameStorage:
             'whatsapp_business_account_id': pd.Series(dtype='object'),
             'whatsapp_phone_number': pd.Series(dtype='object'),
             'estado': pd.Series(dtype='object'),
+            'owner_facebook_user_id': pd.Series(dtype='object'),
             'password_hash': pd.Series(dtype='object'),
             'fecha_registro': pd.Series(dtype='datetime64[ns]'),
             'fecha_ultimo_login': pd.Series(dtype='datetime64[ns]'),

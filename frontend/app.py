@@ -247,46 +247,6 @@ def crear_sidebar():
                     ),
                 ]),
             ]),
-                        dbc.Row([
-                dbc.Col([
-                            dbc.Button(
-                                [html.I(className="fas fa-sync me-2"), "Sync"],
-                                id="btn-sync",
-                                color="warning",
-                                className="w-100 mt-3"
-                            ),
-                        ]),
-                    ]),
-                        # Modal para contraseña
-                        dbc.Modal([
-                            dbc.ModalHeader("Confirmar sincronización", id="modal-sync-header"),
-                            dbc.ModalBody([
-                                dbc.Input(id="input-sync-password", type="password", placeholder="Contraseña"),
-                                html.Div(id="sync-modal-status", className="mt-2"),
-                                dbc.Progress(
-                                    id="sync-progress",
-                                    value=0,
-                                    striped=True,
-                                    animated=True,
-                                    style={"height": "20px", "display": "none"},
-                                    className="mt-2 mb-1"
-                                ),
-                                html.H6("Sync logs", className="mt-3", id="sync-logs-label"),
-                                html.Pre(id="sync-log", style={
-                                    'maxHeight': '300px',
-                                    'overflowY': 'auto',
-                                    'whiteSpace': 'pre-wrap',
-                                    'fontSize': '0.8rem',
-                                    'backgroundColor': '#f8f9fa',
-                                    'padding': '8px',
-                                    'borderRadius': '4px'
-                                }),
-                            ]),
-                            dbc.ModalFooter([
-                                dbc.Button("Cancelar", id="btn-sync-cancel", className="me-2"),
-                                dbc.Button("Iniciar Sync", id="btn-sync-confirm", color="primary")
-                            ])
-                        ], id="modal-sync", is_open=False),
                                 html.Hr(className="mt-4"),
                                 dbc.Button(
                                     [html.I(className="fas fa-globe me-2"), "EN"],
@@ -552,7 +512,6 @@ def crear_contenido():
             dcc.Store(id="store-estadisticas"),
             dcc.Store(id="store-conversacion-actual"),
             dcc.Store(id="store-analisis-evento-actual"),  # Para guardar el análisis que está editando evento
-            dcc.Store(id="store-sync-status"),
             dcc.Store(id="store-candidato-whatsapp-id"),  # Para guardar el candidato que está configurando WhatsApp
             dcc.Store(id="store-facebook-pages"),  # Para guardar páginas de Facebook
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
@@ -560,7 +519,6 @@ def crear_contenido():
             dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
-            dcc.Interval(id="interval-sync-poll", interval=2000, n_intervals=0, disabled=True),
             dcc.Interval(id="interval-sync-candidato", interval=2500, n_intervals=0, disabled=True),
             # Interval para actualización automática
             dcc.Interval(
@@ -1502,16 +1460,20 @@ def guardar_evento_personalizado(btn_guardar, btn_cancelar, nombre_evento, anali
     Output("lista-candidatos-conectados", "children"),
     [Input("interval-actualizacion", "n_intervals"),
      Input("store-idioma", "data")],
-    State("store-sync-candidatos", "data")
+    [State("store-sync-candidatos", "data"),
+     State("store-facebook-user-id", "data")]
 )
-def cargar_candidatos_conectados(n, lang, sync_store):
+def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
     """Cargar lista de candidatos conectados."""
     # No re-renderizar si hay un sync activo — evita destruir el spinner/progress bar
     if sync_store and any(v.get("state") == "running" for v in sync_store.values()):
         raise PreventUpdate
     lang = lang or "es"
     try:
-        response = requests.get(f"{BACKEND_URL}/api/candidatos", timeout=5)
+        params = {}
+        if facebook_user_id:
+            params["owner_facebook_user_id"] = facebook_user_id
+        response = requests.get(f"{BACKEND_URL}/api/candidatos", params=params, timeout=5)
         if response.ok:
             candidatos = response.json()
             
@@ -1541,6 +1503,18 @@ def cargar_candidatos_conectados(n, lang, sync_store):
                             html.I(className="fab fa-whatsapp me-2 text-success"),
                             f"WhatsApp: {whatsapp_number}" if whatsapp_number != 'N/A' else "WhatsApp: No configurado"
                         ], className="mb-2 small"),
+                        html.Div([
+                            html.Small("Sincronizar desde:", className="text-muted d-block mb-1"),
+                            dcc.DatePickerSingle(
+                                id={"type": "date-sync-candidato", "index": candidato_id},
+                                max_date_allowed=datetime.today().strftime("%Y-%m-%d"),
+                                min_date_allowed="2020-01-01",
+                                placeholder="Últimos 3 meses",
+                                display_format="DD/MM/YYYY",
+                                clearable=True,
+                                style={"width": "100%", "fontSize": "0.8rem"},
+                            ),
+                        ], className="mb-2"),
                         dbc.Row([
                             dbc.Col([
                                 dbc.Button(
@@ -1586,14 +1560,17 @@ def cargar_candidatos_conectados(n, lang, sync_store):
 @app.callback(
     [Output("store-sync-candidatos", "data"),
      Output({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "children"),
-     Output("interval-sync-candidato", "disabled")],
+     Output("interval-sync-candidato", "disabled"),
+     Output("modal-loading-sync", "is_open", allow_duplicate=True),
+     Output("modal-loading-sync-msg", "children", allow_duplicate=True)],
     Input({"type": "btn-sincronizar-candidato", "index": dash.dependencies.ALL}, "n_clicks"),
     [State("store-sync-candidatos", "data"),
      State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id"),
-     State({"type": "switch-force-reprocess", "index": dash.dependencies.ALL}, "value")],
+     State({"type": "switch-force-reprocess", "index": dash.dependencies.ALL}, "value"),
+     State({"type": "date-sync-candidato", "index": dash.dependencies.ALL}, "date")],
     prevent_initial_call=True
 )
-def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force):
+def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates):
     """Lanza sincronización en background; habilita el interval de polling."""
     ctx = dash.callback_context
     if not ctx.triggered or not any(c for c in all_clicks if c):
@@ -1608,18 +1585,27 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force):
     except Exception:
         raise PreventUpdate
 
-    # Determinar force_reprocess para este candidato
+    # Determinar force_reprocess y desde_fecha para este candidato
     force = False
-    for id_dict, fval in zip(all_ids, all_force):
+    desde_fecha = None
+    for id_dict, fval, dval in zip(all_ids, all_force, all_dates):
         if id_dict["index"] == candidato_id:
             force = bool(fval)
+            desde_fecha = dval  # ISO date string "YYYY-MM-DD" o None
             break
+
+    # Construir parámetros de la llamada
+    params = {"limit": 50, "force_reprocess": force}
+    if desde_fecha:
+        params["desde_fecha"] = desde_fecha
+    else:
+        params["meses_historico"] = 3
 
     # Llamar al endpoint (no bloqueante, retorna inmediatamente)
     try:
         resp = requests.post(
             f"{BACKEND_URL}/api/candidatos/{candidato_id}/sincronizar",
-            params={"limit": 50, "force_reprocess": force, "meses_historico": 3},
+            params=params,
             timeout=10
         )
         if not resp.ok:
@@ -1635,6 +1621,8 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force):
 
     store_data = store_data or {}
     statuses = []
+    modal_open = False
+    modal_msg_text = ""
     for id_dict in all_ids:
         cid = id_dict["index"]
         if cid == candidato_id:
@@ -1644,13 +1632,15 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force):
                     dbc.Spinner(size="sm", color="info", className="me-2"),
                     html.Small("Sincronizando…", className="text-muted")
                 ]))
+                modal_open = True
+                modal_msg_text = "Iniciando sincronización…"
             else:
                 statuses.append(dbc.Alert(f"Error: {msg}", color="danger", dismissable=True, duration=5000))
         else:
             statuses.append(dash.no_update)
 
     still_running = any(v.get("state") == "running" for v in store_data.values())
-    return store_data, statuses, not still_running
+    return store_data, statuses, not still_running, modal_open, modal_msg_text
 
 
 @app.callback(
@@ -1719,9 +1709,9 @@ def poll_sync_candidatos(n, store_data, all_ids):
 
 
 @app.callback(
-    [Output("modal-loading-sync", "is_open"),
-     Output("modal-loading-sync-bar", "value"),
-     Output("modal-loading-sync-msg", "children")],
+    [Output("modal-loading-sync", "is_open", allow_duplicate=True),
+     Output("modal-loading-sync-bar", "value", allow_duplicate=True),
+     Output("modal-loading-sync-msg", "children", allow_duplicate=True)],
     Input("store-sync-candidatos", "data"),
     prevent_initial_call=True
 )
@@ -1971,124 +1961,6 @@ def conectar_paginas_seleccionadas(n_clicks, selected_page_ids, pages_data, face
         )
 
 
-# === Callbacks para Sync ===
-
-@app.callback(
-    Output("modal-sync", "is_open"),
-    [
-        Input("btn-sync", "n_clicks"),
-        Input("btn-sync-cancel", "n_clicks"),
-        Input("btn-sync-confirm", "n_clicks"),
-    ],
-    [State("modal-sync", "is_open")]
-)
-def toggle_sync_modal(open_click, cancel_click, confirm_click, is_open):
-    """Abrir modal al presionar `Sync`; cerrarlo si cancela o confirma."""
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trigger = ctx.triggered[0]["prop_id"]
-    # Abrir solo con el botón principal
-    if "btn-sync" in trigger:
-        return True
-    # Cerrar si se presionó cancelar
-    if "btn-sync-cancel" in trigger:
-        return False
-    # Si se presionó confirmar, mantener modal abierto para mostrar logs
-    if "btn-sync-confirm" in trigger:
-        return True
-    return is_open
-
-@app.callback(
-    Output("sync-log", "children"),
-    Output("sync-modal-status", "children"),
-    Output("store-sync-status", "data"),
-    Output("interval-sync-poll", "disabled"),
-    Output("sync-progress", "value"),
-    Output("sync-progress", "style"),
-    Output("sync-progress", "color"),
-    Input("btn-sync-confirm", "n_clicks"),
-    Input("interval-sync-poll", "n_intervals"),
-    State("input-sync-password", "value"),
-    prevent_initial_call=True,
-)
-def handle_sync(confirm_click, n_intervals, password):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trigger = ctx.triggered[0]["prop_id"]
-
-    _progress_running = {"height": "20px", "display": "block"}
-    _progress_hidden  = {"height": "20px", "display": "none"}
-
-    if "btn-sync-confirm" in trigger:
-        res = control.request_sync(password or "")
-        if not res.get("ok"):
-            logs = "\n".join(control.get_logs(200))
-            return logs, dbc.Alert(res.get("msg", "Error"), color="danger"), dash.no_update, True, 0, _progress_hidden, "primary"
-        status = control.get_status()
-        logs = "\n".join(control.get_logs(200))
-        return logs, dbc.Alert("Sincronización iniciada...", color="info"), status, False, 30, _progress_running, "info"
-
-    if "interval-sync-poll" in trigger:
-        status = control.get_status()
-        state = status.get("state")
-        logs = "\n".join(control.get_logs(500))
-        if state in ("finished", "error", "idle", "stopped"):
-            if state == "finished":
-                modal_msg = dbc.Alert("Sincronización completada ✓", color="success")
-                prog_val, prog_color = 100, "success"
-            elif state == "error":
-                modal_msg = dbc.Alert(f"Error: {status.get('message','')}", color="danger")
-                prog_val, prog_color = 100, "danger"
-            else:
-                modal_msg = dbc.Alert(status.get('message', 'Finalizado'), color="info")
-                prog_val, prog_color = 100, "info"
-            return logs, modal_msg, status, True, prog_val, _progress_running, prog_color
-        # Sigue corriendo - mover la barra
-        log_line = status.get('message', '')
-        modal_msg = dbc.Alert(log_line, color="info") if log_line else dash.no_update
-        return logs, modal_msg, status, False, 60, _progress_running, "info"
-
-    raise PreventUpdate
-
-@app.callback(
-    Output("page-content", "style"),
-    Input("store-sync-status", "data")
-)
-def show_loading_overlay(status):
-    if not status:
-        return CONTENT_STYLE
-    state = status.get("state")
-    if state == "running_sync":
-        # simple style change to indicate loading; you can replace with modal overlay
-        s = CONTENT_STYLE.copy()
-        s.update({"opacity": "0.4", "pointerEvents": "none"})
-        return s
-    return CONTENT_STYLE
-
-
-@app.callback(
-    Output("sync-log", "style"),
-    Input("store-sync-status", "data")
-)
-def toggle_sync_log(status):
-    """Mostrar el área de logs cuando exista estado de sync (iniciado)."""
-    if not status:
-        return { 'display': 'none' }
-    # mostrar el area con el mismo estilo que antes
-    return {
-        'display': 'block',
-        'maxHeight': '200px',
-        'overflowY': 'auto',
-        'whiteSpace': 'pre-wrap',
-        'fontSize': '0.8rem',
-        'backgroundColor': '#f8f9fa',
-        'padding': '8px',
-        'borderRadius': '4px'
-    }
-
-
 # === Callback modal Política de Privacidad ===
 @app.callback(
     Output("modal-privacidad", "is_open"),
@@ -2128,12 +2000,6 @@ def cambiar_idioma(n_clicks, lang):
      Output("btn-buscar", "children"),
      Output("btn-limpiar", "children"),
      Output("btn-exportar", "children"),
-     Output("btn-sync", "children"),
-     Output("modal-sync-header", "children"),
-     Output("input-sync-password", "placeholder"),
-     Output("sync-logs-label", "children"),
-     Output("btn-sync-cancel", "children"),
-     Output("btn-sync-confirm", "children"),
      Output("btn-idioma", "children"),
      Output("texto-dashboard-titulo", "children"),
      Output("texto-dashboard-subtitulo", "children"),
@@ -2169,12 +2035,6 @@ def actualizar_textos_ui(lang):
         [html.I(className="fas fa-search me-2"), t("buscar", lang)],
         [html.I(className="fas fa-redo me-2"), t("limpiar", lang)],
         [html.I(className="fas fa-download me-2"), t("exportar_csv", lang)],
-        [html.I(className="fas fa-sync me-2"), t("sync_btn", lang)],
-        t("confirmar_sync", lang),
-        t("password_placeholder", lang),
-        t("sync_logs_label", lang),
-        t("cancelar", lang),
-        t("iniciar_sync", lang),
         [html.I(className="fas fa-globe me-2"), t("cambiar_idioma_btn", lang)],
         t("dashboard_titulo", lang),
         t("dashboard_subtitulo", lang),

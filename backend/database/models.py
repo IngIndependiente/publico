@@ -176,6 +176,9 @@ class Candidato(Base):
     # Estado
     estado = Column(String(50), default='activo')  # 'activo', 'inactivo', 'suspendido'
     
+    # Propietario: facebook_user_id del usuario OAuth que conectó las páginas
+    owner_facebook_user_id = Column(String(200), nullable=True)
+    
     # Autenticación de usuario (opcional si no usas Facebook Login para entrar al dashboard)
     password_hash = Column(String(500), nullable=True)
     

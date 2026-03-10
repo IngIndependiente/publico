@@ -645,6 +645,7 @@ async def conectar_paginas_seleccionadas(request: Request):
         pages = body.get("pages", [])
         email_base = body.get("email_base", "user")
         instagram_access_token = body.get("instagram_access_token")  # User-level token for Instagram Messaging API
+        owner_facebook_user_id = body.get("facebook_user_id")  # Propietario del usuario OAuth
         
         if not pages:
             raise HTTPException(status_code=400, detail="No se proporcionaron páginas para conectar")
@@ -678,7 +679,8 @@ async def conectar_paginas_seleccionadas(request: Request):
                         facebook_token_expiration=datetime.now(),
                         instagram_business_account_id=instagram_id,
                         instagram_username=instagram_username,
-                        instagram_access_token=instagram_access_token
+                        instagram_access_token=instagram_access_token,
+                        owner_facebook_user_id=owner_facebook_user_id
                     )
                     candidatos_actualizados.append({
                         "id": candidato['id'],
@@ -699,7 +701,8 @@ async def conectar_paginas_seleccionadas(request: Request):
                         facebook_token_expiration=datetime.now(),
                         instagram_business_account_id=instagram_id,
                         instagram_username=instagram_username,
-                        instagram_access_token=instagram_access_token
+                        instagram_access_token=instagram_access_token,
+                        owner_facebook_user_id=owner_facebook_user_id
                     )
                     candidatos_creados.append({
                         "id": candidato['id'],
@@ -743,10 +746,10 @@ async def conectar_paginas_seleccionadas(request: Request):
 
 
 @app.get("/api/candidatos")
-def listar_candidatos():
-    """Listar todos los candidatos registrados."""
+def listar_candidatos(owner_facebook_user_id: Optional[str] = Query(None)):
+    """Listar candidatos registrados, opcionalmente filtrados por propietario."""
     try:
-        candidatos = CandidatoService.listar_candidatos()
+        candidatos = CandidatoService.listar_candidatos(owner_facebook_user_id=owner_facebook_user_id)
         return candidatos
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -783,6 +786,7 @@ def sincronizar_candidato(
     limit: int = Query(50, ge=1, le=200),
     force_reprocess: bool = Query(False),
     meses_historico: int = Query(3, ge=1, le=24),
+    desde_fecha: Optional[str] = Query(None),
 ):
     """
     Inicia la sincronización en un hilo de fondo y retorna inmediatamente.
@@ -811,7 +815,13 @@ def sincronizar_candidato(
         ig_token = candidato.get('instagram_access_token') or config.INSTAGRAM_ACCESS_TOKEN
         token_source = "DB" if candidato.get('instagram_access_token') else ("ENV" if config.INSTAGRAM_ACCESS_TOKEN else "PAGE_TOKEN_FALLBACK")
         print(f"   🔑 Instagram token source: {token_source} (starts with: {(ig_token or '')[:10]}...)")
-        fecha_desde = datetime.utcnow() - timedelta(days=30 * meses_historico)
+        if desde_fecha:
+            try:
+                fecha_desde = datetime.strptime(desde_fecha, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {desde_fecha}. Use YYYY-MM-DD.")
+        else:
+            fecha_desde = datetime.utcnow() - timedelta(days=30 * meses_historico)
 
         _sync_job_update(candidato_id, state="running", progress=0, total=0,
                          message="Iniciando...", errors=[])

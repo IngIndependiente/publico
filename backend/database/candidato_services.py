@@ -30,7 +30,8 @@ class CandidatoService:
         whatsapp_phone_number_id: Optional[str] = None,
         whatsapp_business_account_id: Optional[str] = None,
         whatsapp_phone_number: Optional[str] = None,
-        password_hash: Optional[str] = None
+        password_hash: Optional[str] = None,
+        owner_facebook_user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Crear nuevo candidato.
@@ -67,6 +68,7 @@ class CandidatoService:
                 'whatsapp_business_account_id': whatsapp_business_account_id,
                 'whatsapp_phone_number': whatsapp_phone_number,
                 'estado': 'activo',
+                'owner_facebook_user_id': owner_facebook_user_id,
                 'password_hash': password_hash,
                 'fecha_registro': ahora,
                 'fecha_ultimo_login': None,
@@ -101,6 +103,7 @@ class CandidatoService:
                     whatsapp_business_account_id=whatsapp_business_account_id,
                     whatsapp_phone_number=whatsapp_phone_number,
                     estado='activo',
+                    owner_facebook_user_id=owner_facebook_user_id,
                     password_hash=password_hash
                 )
                 
@@ -220,7 +223,8 @@ class CandidatoService:
         facebook_token_expiration: datetime,
         instagram_business_account_id: Optional[str] = None,
         instagram_username: Optional[str] = None,
-        instagram_access_token: Optional[str] = None
+        instagram_access_token: Optional[str] = None,
+        owner_facebook_user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Actualizar tokens de Facebook/Instagram para un candidato."""
         if config.ENV == "local":
@@ -242,6 +246,10 @@ class CandidatoService:
                 storage.candidatos_df.loc[mask, 'instagram_username'] = instagram_username
             if instagram_access_token:
                 storage.candidatos_df.loc[mask, 'instagram_access_token'] = instagram_access_token
+            if owner_facebook_user_id:
+                if 'owner_facebook_user_id' not in storage.candidatos_df.columns:
+                    storage.candidatos_df['owner_facebook_user_id'] = None
+                storage.candidatos_df.loc[mask, 'owner_facebook_user_id'] = owner_facebook_user_id
             
             storage.candidatos_df.loc[mask, 'fecha_actualizacion'] = datetime.now()
             storage.save_candidatos()
@@ -265,6 +273,8 @@ class CandidatoService:
                     candidato.instagram_username = instagram_username
                 if instagram_access_token:
                     candidato.instagram_access_token = instagram_access_token
+                if owner_facebook_user_id:
+                    candidato.owner_facebook_user_id = owner_facebook_user_id
                 
                 db.commit()
                 db.refresh(candidato)
@@ -279,15 +289,23 @@ class CandidatoService:
                 }
     
     @staticmethod
-    def listar_candidatos() -> list:
-        """Listar todos los candidatos activos."""
+    def listar_candidatos(owner_facebook_user_id: Optional[str] = None) -> list:
+        """Listar todos los candidatos activos, opcionalmente filtrados por propietario."""
         if config.ENV == "local":
             storage = get_storage()
-            candidatos = storage.candidatos_df[storage.candidatos_df['estado'] == 'activo']
+            df = storage.candidatos_df
+            if 'owner_facebook_user_id' not in df.columns:
+                df['owner_facebook_user_id'] = None
+            candidatos = df[df['estado'] == 'activo']
+            if owner_facebook_user_id:
+                candidatos = candidatos[candidatos['owner_facebook_user_id'] == owner_facebook_user_id]
             return candidatos.to_dict('records')
         else:
             with get_db() as db:
-                candidatos = db.query(Candidato).filter(Candidato.estado == 'activo').all()
+                query = db.query(Candidato).filter(Candidato.estado == 'activo')
+                if owner_facebook_user_id:
+                    query = query.filter(Candidato.owner_facebook_user_id == owner_facebook_user_id)
+                candidatos = query.all()
                 return [{
                     'id': c.id,
                     'nombre': c.nombre,
