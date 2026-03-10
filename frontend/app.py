@@ -519,6 +519,7 @@ def crear_contenido():
             dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
+            dcc.Download(id="download-csv"),
             dcc.Interval(id="interval-sync-candidato", interval=2500, n_intervals=0, disabled=True),
             # Interval para actualización automática
             dcc.Interval(
@@ -755,12 +756,16 @@ def cargar_paginas_oauth(href):
     [Output("store-estadisticas", "data"),
      Output("stat-total-personas", "children"),
      Output("stat-conversaciones", "children")],
-    [Input("interval-actualizacion", "n_intervals")]
+    [Input("interval-actualizacion", "n_intervals")],
+    [State("store-facebook-user-id", "data")]
 )
-def actualizar_estadisticas(n):
+def actualizar_estadisticas(n, facebook_user_id):
     """Actualizar estadísticas generales."""
     try:
-        response = requests.get(f"{BACKEND_URL}/api/stats", timeout=5)
+        params = {}
+        if facebook_user_id:
+            params["owner_facebook_user_id"] = facebook_user_id
+        response = requests.get(f"{BACKEND_URL}/api/stats", params=params, timeout=5)
         if response.status_code == 200:
             stats = response.json()
             return (
@@ -1130,68 +1135,61 @@ def cargar_conversacion(analisis_id):
 
 
 @app.callback(
-    Output("info-exportacion", "children"),
+    [Output("download-csv", "data"),
+     Output("info-exportacion", "children")],
     [Input("btn-exportar", "n_clicks")],
-    [State("filtro-fecha-inicio", "value"),
-     State("filtro-fecha-fin", "value"),
-     State("filtro-genero", "value"),
-     State("filtro-edad-min", "value"),
-     State("filtro-edad-max", "value"),
-     State("filtro-intereses", "value"),
-     State("filtro-ubicacion", "value"),
-     State("store-facebook-user-id", "data")],
+    [State("store-datos-personas", "data")],
     prevent_initial_call=True
 )
-def exportar_csv(n_clicks, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
-    """Exportar resultados a CSV."""
+def exportar_csv(n_clicks, personas):
+    """Descargar la tabla de resultados de búsqueda actual como CSV."""
     if not n_clicks:
-        return ""
-    
-    # Construir payload
-    payload = {}
-    # Solo enviar fechas si tienen valor y no son cadenas vacías
-    if fecha_inicio and fecha_inicio.strip():
-        payload["fecha_inicio"] = fecha_inicio
-    if fecha_fin and fecha_fin.strip():
-        payload["fecha_fin"] = fecha_fin
-    if genero:
-        payload["genero"] = genero
-    if edad_min:
-        payload["edad_min"] = edad_min
-    if edad_max:
-        payload["edad_max"] = edad_max
-    if intereses:
-        payload["intereses"] = intereses
-    if ubicacion and ubicacion.strip():
-        payload["ubicacion"] = ubicacion
-    if facebook_user_id:
-        payload["facebook_user_id"] = facebook_user_id
+        return None, ""
+    if not personas:
+        return None, dbc.Alert(
+            [html.I(className="fas fa-exclamation-triangle me-2"), "No hay resultados para exportar."],
+            color="warning", className="small mt-2"
+        )
     
     try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/personas/exportar",
-            json=payload,
-            timeout=15
-        )
+        columnas = [
+            ("id", "ID"),
+            ("nombre_completo", "Nombre Completo"),
+            ("edad", "Edad"),
+            ("genero", "Género"),
+            ("ubicacion", "Ubicación"),
+            ("ocupacion", "Ocupación"),
+            ("telefono", "Teléfono"),
+            ("email", "Email"),
+            ("facebook_username", "Usuario Facebook"),
+            ("instagram_username", "Usuario Instagram"),
+            ("intereses", "Intereses"),
+            ("resumen_conversacion", "Resumen Conversación"),
+            ("fecha_primer_contacto", "Primer Contacto"),
+            ("fecha_ultimo_contacto", "Último Contacto"),
+        ]
+        rows = []
+        for p in personas:
+            row = {}
+            for key, label in columnas:
+                val = p.get(key, "")
+                if isinstance(val, list):
+                    val = ", ".join(str(v) for v in val)
+                row[label] = val if val is not None else ""
+            rows.append(row)
         
-        if response.status_code == 200:
-            data = response.json()
-            return dbc.Alert(
-                [
-                    html.I(className="fas fa-check-circle me-2"),
-                    f"Exportado: {data['filename']} ({data['total_registros']} registros)"
-                ],
-                color="success",
-                className="small mt-2"
-            )
+        df_export = pd.DataFrame(rows)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return dcc.send_data_frame(df_export.to_csv, f"resultados_{timestamp}.csv", index=False, encoding="utf-8-sig"), \
+               dbc.Alert(
+                   [html.I(className="fas fa-check-circle me-2"), f"{len(rows)} registros exportados"],
+                   color="success", className="small mt-2"
+               )
     except Exception as e:
-        return dbc.Alert(
+        return None, dbc.Alert(
             [html.I(className="fas fa-exclamation-triangle me-2"), f"Error: {str(e)}"],
-            color="danger",
-            className="small mt-2"
+            color="danger", className="small mt-2"
         )
-    
-    return dbc.Alert("Error al exportar", color="danger", className="small mt-2")
 
 
 @app.callback(
