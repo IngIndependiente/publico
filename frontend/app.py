@@ -1482,10 +1482,14 @@ def guardar_evento_personalizado(btn_guardar, btn_cancelar, nombre_evento, anali
 @app.callback(
     Output("lista-candidatos-conectados", "children"),
     [Input("interval-actualizacion", "n_intervals"),
-     Input("store-idioma", "data")]
+     Input("store-idioma", "data")],
+    State("store-sync-candidatos", "data")
 )
-def cargar_candidatos_conectados(n, lang):
+def cargar_candidatos_conectados(n, lang, sync_store):
     """Cargar lista de candidatos conectados."""
+    # No re-renderizar si hay un sync activo — evita destruir el spinner/progress bar
+    if sync_store and any(v.get("state") == "running" for v in sync_store.values()):
+        raise PreventUpdate
     lang = lang or "es"
     try:
         response = requests.get(f"{BACKEND_URL}/api/candidatos", timeout=5)
