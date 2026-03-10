@@ -515,7 +515,7 @@ def crear_contenido():
             dcc.Store(id="store-candidato-whatsapp-id"),  # Para guardar el candidato que está configurando WhatsApp
             dcc.Store(id="store-facebook-pages"),  # Para guardar páginas de Facebook
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
-            dcc.Store(id="store-facebook-user-id"),  # facebook_user_id del usuario autenticado
+            dcc.Store(id="store-facebook-user-id", storage_type="local"),  # facebook_user_id del usuario autenticado
             dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
@@ -1138,10 +1138,11 @@ def cargar_conversacion(analisis_id):
      State("filtro-edad-min", "value"),
      State("filtro-edad-max", "value"),
      State("filtro-intereses", "value"),
-     State("filtro-ubicacion", "value")],
+     State("filtro-ubicacion", "value"),
+     State("store-facebook-user-id", "data")],
     prevent_initial_call=True
 )
-def exportar_csv(n_clicks, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion):
+def exportar_csv(n_clicks, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
     """Exportar resultados a CSV."""
     if not n_clicks:
         return ""
@@ -1163,6 +1164,8 @@ def exportar_csv(n_clicks, fecha_inicio, fecha_fin, genero, edad_min, edad_max, 
         payload["intereses"] = intereses
     if ubicacion and ubicacion.strip():
         payload["ubicacion"] = ubicacion
+    if facebook_user_id:
+        payload["facebook_user_id"] = facebook_user_id
     
     try:
         response = requests.post(
@@ -1465,6 +1468,12 @@ def guardar_evento_personalizado(btn_guardar, btn_cancelar, nombre_evento, anali
 )
 def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
     """Cargar lista de candidatos conectados."""
+    # Si el usuario no está autenticado, no mostrar nada
+    if not facebook_user_id:
+        return dbc.Alert(
+            [html.I(className="fab fa-facebook me-2"), "Conecta tu cuenta de Facebook para ver tus páginas."],
+            color="info", className="mt-2"
+        )
     # No re-renderizar si hay un sync activo — evita destruir el spinner/progress bar
     if sync_store and any(v.get("state") == "running" for v in sync_store.values()):
         raise PreventUpdate

@@ -99,6 +99,7 @@ class BusquedaRequest(BaseModel):
     ubicacion: Optional[str] = None
     fecha_inicio: Optional[str] = None
     fecha_fin: Optional[str] = None
+    facebook_user_id: Optional[str] = None
 
 
 # === Modelos Pydantic para Admin Usuarios ===
@@ -1273,6 +1274,14 @@ def listar_personas(limit: int = 100, db: Session = Depends(get_db_session)):
         return []
 
 
+def _get_candidato_ids_por_owner(facebook_user_id: Optional[str]) -> Optional[set]:
+    """Retornar el conjunto de IDs de candidatos del usuario, o None si no se filtra."""
+    if not facebook_user_id:
+        return None
+    ids = CandidatoService.listar_candidatos_por_owner(facebook_user_id)
+    return set(ids)
+
+
 @app.post("/api/personas/buscar")
 def buscar_personas(busqueda: BusquedaRequest):
     """Buscar sesiones/personas según criterios."""
@@ -1307,6 +1316,7 @@ def buscar_personas(busqueda: BusquedaRequest):
             )
         
     resultado = []
+    candidato_ids_owner = _get_candidato_ids_por_owner(busqueda.facebook_user_id)
     
     # 3. Filtrar por demografía y construir respuesta
     if USE_DATAFRAMES:
@@ -1318,6 +1328,10 @@ def buscar_personas(busqueda: BusquedaRequest):
             persona = PersonaService.obtener_persona_por_id(persona_id)
             
             if not persona: 
+                continue
+
+            # Filtro por propietario
+            if candidato_ids_owner is not None and persona.get('candidato_id') not in candidato_ids_owner:
                 continue
             
             # Filtros demográficos
@@ -1372,6 +1386,10 @@ def buscar_personas(busqueda: BusquedaRequest):
         for analisis in analisis_candidates:
             persona = analisis.persona
             if not persona: continue # Safety check
+
+            # Filtro por propietario
+            if candidato_ids_owner is not None and persona.candidato_id not in candidato_ids_owner:
+                continue
             
             # Filtros demográficos
             if busqueda.genero and persona.genero != busqueda.genero:
@@ -1459,11 +1477,15 @@ def exportar_personas(busqueda: BusquedaRequest):
             )
         
     data = []
+    candidato_ids_owner = _get_candidato_ids_por_owner(busqueda.facebook_user_id)
     
     if USE_DATAFRAMES:
         for analisis in analisis_candidates:
             persona = PersonaService.obtener_persona_por_id(analisis['persona_id'])
             if not persona: continue
+
+            # Filtro por propietario
+            if candidato_ids_owner is not None and persona.get('candidato_id') not in candidato_ids_owner: continue
             
             # Filtros demográficos
             if busqueda.genero and persona.get('genero') != busqueda.genero: continue
@@ -1496,6 +1518,9 @@ def exportar_personas(busqueda: BusquedaRequest):
     else:
         for analisis in analisis_candidates:
             persona = analisis.persona
+
+            # Filtro por propietario
+            if candidato_ids_owner is not None and persona.candidato_id not in candidato_ids_owner: continue
             
             # Filtros demográficos
             if busqueda.genero and persona.genero != busqueda.genero: continue

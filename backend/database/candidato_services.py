@@ -371,3 +371,21 @@ class CandidatoService:
                     'whatsapp_business_account_id': candidato.whatsapp_business_account_id,
                     'whatsapp_phone_number': candidato.whatsapp_phone_number
                 }
+
+    @staticmethod
+    def listar_candidatos_por_owner(owner_facebook_user_id: str) -> list:
+        """Retornar IDs de candidatos activos que pertenecen al usuario dado."""
+        if config.ENV == "local":
+            storage = get_storage()
+            df = storage.candidatos_df
+            if 'owner_facebook_user_id' not in df.columns:
+                return []
+            mask = (df['estado'] == 'activo') & (df['owner_facebook_user_id'] == owner_facebook_user_id)
+            return df[mask]['id'].astype(int).tolist()
+        else:
+            with get_db() as db:
+                candidatos = db.query(Candidato).filter(
+                    Candidato.estado == 'activo',
+                    Candidato.owner_facebook_user_id == owner_facebook_user_id
+                ).all()
+                return [c.id for c in candidatos]

@@ -66,6 +66,8 @@ class DataFramePersonaService:
             persona['ubicacion'] = datos["ubicacion"]
         if datos.get("resumen_conversacional"):
             persona['resumen'] = datos["resumen_conversacional"]
+        if datos.get("candidato_id") is not None:
+            persona['candidato_id'] = datos["candidato_id"]
         
         persona['fecha_ultimo_contacto'] = now
         
