@@ -529,7 +529,7 @@ def crear_contenido():
             dbc.Modal([
                 dbc.ModalBody([
                     html.Div([
-                        dbc.Spinner(color="primary", size="lg"),
+                    dbc.Spinner(color="primary", size="lg"),
                         html.H5("Sincronizando conversaciones...", className="mt-3 mb-1 text-center"),
                         html.Div(id="modal-loading-sync-msg", className="text-center text-muted small mb-3"),
                         html.Div(id="modal-loading-sync-bar"),
@@ -1576,18 +1576,6 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
                                 ),
                             ], width=6),
                         ]),
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Button(
-                                    [html.I(className="fab fa-instagram me-2"), "Token IG"],
-                                    id={"type": "btn-config-instagram", "index": candidato_id},
-                                    color="danger",
-                                    size="sm",
-                                    outline=True,
-                                    className="w-100"
-                                ),
-                            ], width=12),
-                        ], className="mt-1"),
                         dbc.Switch(
                             id={"type": "switch-force-reprocess", "index": candidato_id},
                             label=t("cand_re_analizar", lang),
@@ -1680,8 +1668,8 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates
             if ok:
                 store_data[str(cid)] = {"state": "running", "progress": 0, "total": 0, "message": "Iniciando…"}
                 statuses.append(html.Div([
-                    dbc.Spinner(size="sm", color="info", className="me-2"),
-                    html.Small("Sincronizando…", className="text-muted")
+                    dbc.Spinner(size="sm", color="info"),
+                    html.Small(" Sincronizando…", className="text-muted")
                 ]))
             else:
                 statuses.append(dbc.Alert(f"Error: {msg}", color="danger", dismissable=True, duration=5000))
@@ -1911,65 +1899,6 @@ def guardar_config_whatsapp(n_clicks, candidato_id, phone_id, business_id, phone
             color="danger",
             dismissable=True
         )
-
-
-# Callback para abrir/cerrar modal de Token de Instagram
-@app.callback(
-    [Output("modal-instagram-token", "is_open"),
-     Output("store-candidato-ig-token-id", "data")],
-    [Input({"type": "btn-config-instagram", "index": dash.dependencies.ALL}, "n_clicks"),
-     Input("btn-instagram-token-cancel", "n_clicks"),
-     Input("btn-instagram-token-save", "n_clicks")],
-    [State("modal-instagram-token", "is_open"),
-     State({"type": "btn-config-instagram", "index": dash.dependencies.ALL}, "id")],
-    prevent_initial_call=True
-)
-def toggle_modal_instagram_token(btn_config_clicks, btn_cancel, btn_save, is_open, btn_ids):
-    """Abrir/cerrar modal de configuración Token de Instagram."""
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trigger_id = ctx.triggered[0]["prop_id"]
-    if "btn-instagram-token-cancel" in trigger_id or "btn-instagram-token-save" in trigger_id:
-        return False, None
-    if "btn-config-instagram" in trigger_id:
-        for i, clicks in enumerate(btn_config_clicks):
-            if clicks:
-                candidato_id = btn_ids[i]["index"]
-                return True, candidato_id
-    return is_open, None
-
-
-# Callback para guardar Token de Instagram
-@app.callback(
-    Output("instagram-token-status", "children"),
-    Input("btn-instagram-token-save", "n_clicks"),
-    [State("store-candidato-ig-token-id", "data"),
-     State("input-instagram-token", "value")],
-    prevent_initial_call=True
-)
-def guardar_instagram_token(n_clicks, candidato_id, token_value):
-    """Guardar token de Instagram para el candidato."""
-    if not n_clicks or not candidato_id:
-        raise PreventUpdate
-    if not token_value or not token_value.strip():
-        return dbc.Alert("Por favor ingresa un token", color="warning", dismissable=True)
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/candidatos/{candidato_id}/instagram-token",
-            json={"instagram_access_token": token_value.strip()},
-            timeout=5
-        )
-        if response.ok:
-            return dbc.Alert(
-                [html.I(className="fas fa-check-circle me-2"), "Token de Instagram guardado correctamente"],
-                color="success", dismissable=True
-            )
-        else:
-            error_detail = response.json().get("detail", "Error desconocido")
-            return dbc.Alert(f"Error: {error_detail}", color="danger", dismissable=True)
-    except Exception as e:
-        return dbc.Alert(f"Error de conexión: {str(e)}", color="danger", dismissable=True)
 
 
 # === Callbacks para selección de páginas de Facebook ===
