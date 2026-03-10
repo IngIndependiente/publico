@@ -538,6 +538,7 @@ def crear_contenido():
             dcc.Store(id="store-facebook-pages"),  # Para guardar páginas de Facebook
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
             dcc.Store(id="store-facebook-user-id"),  # facebook_user_id del usuario autenticado
+            dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
             dcc.Interval(id="interval-sync-poll", interval=2000, n_intervals=0, disabled=True),
@@ -737,7 +738,8 @@ app.layout = html.Div([
     [Output('store-facebook-pages', 'data'),
      Output('url', 'pathname'),
      Output('url', 'search'),
-     Output('store-facebook-user-id', 'data')],
+     Output('store-facebook-user-id', 'data'),
+     Output('store-instagram-access-token', 'data')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
@@ -760,9 +762,10 @@ def cargar_paginas_oauth(href):
             data = response.json()
             pages = data.get('pages', [])
             facebook_user_id = data.get('facebook_user_id')
+            instagram_access_token = data.get('instagram_access_token')
             if pages:
                 # Limpiar el token de la URL (pathname y search)
-                return pages, '/', '', facebook_user_id
+                return pages, '/', '', facebook_user_id, instagram_access_token
     except Exception as e:
         print(f"Error recuperando sesión OAuth: {e}")
     
@@ -1844,10 +1847,12 @@ def toggle_pages_modal(pages_data, cancel_clicks, connect_clicks, is_open):
     Output("pages-selection-status", "children"),
     Input("btn-pages-connect", "n_clicks"),
     [State("checklist-paginas", "value"),
-     State("store-facebook-pages", "data")],
+     State("store-facebook-pages", "data"),
+     State("store-facebook-user-id", "data"),
+     State("store-instagram-access-token", "data")],
     prevent_initial_call=True
 )
-def conectar_paginas_seleccionadas(n_clicks, selected_page_ids, pages_data):
+def conectar_paginas_seleccionadas(n_clicks, selected_page_ids, pages_data, facebook_user_id, instagram_access_token):
     """Conectar las páginas seleccionadas."""
     if not n_clicks or not selected_page_ids or not pages_data:
         raise PreventUpdate
@@ -1860,9 +1865,15 @@ def conectar_paginas_seleccionadas(n_clicks, selected_page_ids, pages_data):
             return dbc.Alert("No hay páginas seleccionadas", color="warning", dismissable=True)
         
         # Enviar al backend
+        payload = {"pages": selected_pages}
+        if facebook_user_id:
+            payload["facebook_user_id"] = facebook_user_id
+        if instagram_access_token:
+            payload["instagram_access_token"] = instagram_access_token
+
         response = requests.post(
             f"{BACKEND_URL}/api/candidatos/conectar-paginas",
-            json={"pages": selected_pages},
+            json=payload,
             timeout=10
         )
         

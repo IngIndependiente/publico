@@ -644,6 +644,7 @@ async def conectar_paginas_seleccionadas(request: Request):
         body = await request.json()
         pages = body.get("pages", [])
         email_base = body.get("email_base", "user")
+        instagram_access_token = body.get("instagram_access_token")  # User-level token for Instagram Messaging API
         
         if not pages:
             raise HTTPException(status_code=400, detail="No se proporcionaron páginas para conectar")
@@ -676,7 +677,8 @@ async def conectar_paginas_seleccionadas(request: Request):
                         facebook_page_access_token=page_access_token,
                         facebook_token_expiration=datetime.now(),
                         instagram_business_account_id=instagram_id,
-                        instagram_username=instagram_username
+                        instagram_username=instagram_username,
+                        instagram_access_token=instagram_access_token
                     )
                     candidatos_actualizados.append({
                         "id": candidato['id'],
@@ -696,7 +698,8 @@ async def conectar_paginas_seleccionadas(request: Request):
                         facebook_page_access_token=page_access_token,
                         facebook_token_expiration=datetime.now(),
                         instagram_business_account_id=instagram_id,
-                        instagram_username=instagram_username
+                        instagram_username=instagram_username,
+                        instagram_access_token=instagram_access_token
                     )
                     candidatos_creados.append({
                         "id": candidato['id'],
@@ -801,7 +804,10 @@ def sincronizar_candidato(
         if job.get("state") == "running":
             return {"ok": False, "message": "Ya hay una sincronización en curso para este candidato."}
 
-        cliente = crear_cliente_candidato(candidato['facebook_page_access_token'])
+        cliente = crear_cliente_candidato(
+            candidato['facebook_page_access_token'],
+            instagram_token=candidato.get('instagram_access_token')
+        )
         fecha_desde = datetime.utcnow() - timedelta(days=30 * meses_historico)
 
         _sync_job_update(candidato_id, state="running", progress=0, total=0,
