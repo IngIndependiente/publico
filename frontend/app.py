@@ -526,7 +526,26 @@ def crear_contenido():
                     dbc.Button("Conectar Seleccionadas", id="btn-pages-connect", color="primary")
                 ]),
             ], id="modal-pages-selection", size="lg", is_open=False),
-            
+
+            # Modal de carga durante sincronización
+            dbc.Modal([
+                dbc.ModalBody([
+                    html.Div([
+                        dbc.Spinner(color="primary", size="lg"),
+                        html.H5("Sincronizando conversaciones...", className="mt-3 mb-1 text-center"),
+                        html.Div(id="modal-loading-sync-msg", className="text-center text-muted small mb-3"),
+                        dbc.Progress(
+                            id="modal-loading-sync-bar",
+                            value=10,
+                            striped=True,
+                            animated=True,
+                            style={"height": "8px"}
+                        ),
+                    ], className="text-center py-3")
+                ]),
+            ], id="modal-loading-sync", is_open=False, centered=True,
+               backdrop="static", keyboard=False, size="sm"),
+
             # Store para datos
             dcc.Store(id="store-datos-personas"),
             dcc.Store(id="store-stats-filtradas"),
@@ -1697,6 +1716,30 @@ def poll_sync_candidatos(n, store_data, all_ids):
 
     still_running = any(v.get("state") == "running" for v in new_store.values())
     return new_store, statuses, not still_running
+
+
+@app.callback(
+    [Output("modal-loading-sync", "is_open"),
+     Output("modal-loading-sync-bar", "value"),
+     Output("modal-loading-sync-msg", "children")],
+    Input("store-sync-candidatos", "data"),
+    prevent_initial_call=True
+)
+def controlar_modal_loading_sync(sync_store):
+    """Abre y actualiza el modal de carga global cuando hay una sincronización en curso."""
+    if not sync_store:
+        return False, 0, ""
+
+    running = [(k, v) for k, v in sync_store.items() if v.get("state") == "running"]
+    if running:
+        _, job = running[0]
+        progress = job.get("progress", 0)
+        total = job.get("total", 0)
+        msg = job.get("message", "Iniciando...")
+        pct = max(10, int(progress / total * 100)) if total > 0 else 20
+        return True, pct, msg
+
+    return False, 0, ""
 
 
 # Callback para abrir modal de configuración WhatsApp
