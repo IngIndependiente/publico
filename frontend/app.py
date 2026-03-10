@@ -532,13 +532,7 @@ def crear_contenido():
                         dbc.Spinner(color="primary", size="lg"),
                         html.H5("Sincronizando conversaciones...", className="mt-3 mb-1 text-center"),
                         html.Div(id="modal-loading-sync-msg", className="text-center text-muted small mb-3"),
-                        dbc.Progress(
-                            id="modal-loading-sync-bar",
-                            value=10,
-                            striped=True,
-                            animated=True,
-                            style={"height": "8px"}
-                        ),
+                        html.Div(id="modal-loading-sync-bar"),
                     ], className="text-center py-3")
                 ]),
             ], id="modal-loading-sync", is_open=False, centered=True,
@@ -1751,8 +1745,8 @@ def poll_sync_candidatos(n, store_data, all_ids):
                     fb_label = f"FB {fb_prog}/{fb_total}" if fb_pct > 12 else ""
                     ig_label = f"IG {ig_prog}/{ig_total}" if ig_pct > 12 else ""
                     bar = dbc.Progress([
-                        dbc.Progress(value=fb_pct, max=50, color="primary", bar=True, label=fb_label),
-                        dbc.Progress(value=ig_pct, max=50, color="danger", bar=True, label=ig_label),
+                        dbc.Progress(value=fb_pct, color="primary", bar=True, label=fb_label),
+                        dbc.Progress(value=ig_pct, color="danger", bar=True, label=ig_label),
                     ], style={"height": "16px"}, className="mb-1")
                     status_text = msg
                 else:
@@ -1779,6 +1773,50 @@ def poll_sync_candidatos(n, store_data, all_ids):
 
     still_running = any(v.get("state") == "running" for v in new_store.values())
     return new_store, statuses, not still_running
+
+
+@app.callback(
+    [Output("modal-loading-sync", "is_open"),
+     Output("modal-loading-sync-bar", "children"),
+     Output("modal-loading-sync-msg", "children")],
+    Input("store-sync-candidatos", "data"),
+    prevent_initial_call=True
+)
+def controlar_modal_loading_sync(sync_store):
+    """Abre y actualiza el modal de carga global cuando hay una sincronización en curso."""
+    if not sync_store:
+        return False, None, ""
+
+    running = [(k, v) for k, v in sync_store.items() if v.get("state") == "running"]
+    if not running:
+        return False, None, ""
+
+    _, job = running[0]
+    fb_prog  = job.get("fb_progress", 0)
+    fb_total = job.get("fb_total", 0)
+    ig_prog  = job.get("ig_progress", 0)
+    ig_total = job.get("ig_total", 0)
+    phase    = job.get("phase", "")
+    msg      = job.get("message", "Sincronizando...")
+
+    if fb_total > 0 or ig_total > 0:
+        fb_pct = int(fb_prog / fb_total * 50) if fb_total > 0 else (50 if phase == "instagram" else 5)
+        ig_pct = int(ig_prog / ig_total * 50) if ig_total > 0 else 0
+        if phase == "facebook" and fb_pct == 0:
+            fb_pct = 5
+        fb_label = f"FB {fb_prog}/{fb_total}" if fb_pct > 12 else ""
+        ig_label = f"IG {ig_prog}/{ig_total}" if ig_pct > 12 else ""
+        bar = dbc.Progress([
+            dbc.Progress(value=fb_pct, color="primary", bar=True, label=fb_label),
+            dbc.Progress(value=ig_pct, color="danger", bar=True, label=ig_label),
+        ], style={"height": "10px"})
+    else:
+        progress = job.get("progress", 0)
+        total    = job.get("total", 0)
+        pct = max(10, int(progress / total * 100)) if total > 0 else 15
+        bar = dbc.Progress(value=pct, striped=True, animated=True, style={"height": "10px"})
+
+    return True, bar, msg
 
 
 # Callback para abrir modal de configuración WhatsApp
