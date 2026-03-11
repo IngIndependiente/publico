@@ -394,13 +394,33 @@ def crear_contenido():
                 dbc.ModalHeader(dbc.ModalTitle(id="modal-conversacion-titulo")),
                 dbc.ModalBody([
                     html.Div(id="modal-conversacion-contenido", style={
-                        'maxHeight': '500px',
+                        'maxHeight': '400px',
                         'overflowY': 'auto',
                         'padding': '10px'
                     })
                 ]),
                 dbc.ModalFooter(
-                    dbc.Button("Cerrar", id="modal-conversacion-cerrar", className="ms-auto")
+                    html.Div([
+                        # Reply section (Facebook / Instagram only)
+                        html.Div([
+                            dbc.InputGroup([
+                                dbc.Textarea(
+                                    id="input-reply-mensaje",
+                                    placeholder="Write a reply...",
+                                    rows=2,
+                                    style={"resize": "none", "fontSize": "0.9rem"}
+                                ),
+                                dbc.Button(
+                                    [html.I(className="fas fa-paper-plane me-1"), "Send"],
+                                    id="btn-reply-enviar",
+                                    color="primary",
+                                    style={"whiteSpace": "nowrap"}
+                                ),
+                            ], className="mb-2"),
+                            html.Div(id="reply-status", className="small"),
+                        ], className="w-100 mb-2"),
+                        dbc.Button("Cerrar", id="modal-conversacion-cerrar", color="secondary"),
+                    ], className="d-flex flex-column w-100")
                 ),
             ], id="modal-conversacion", size="lg", is_open=False),
             
@@ -1028,7 +1048,9 @@ def actualizar_tabla(personas, lang):
 
 @app.callback(
     [Output("modal-conversacion", "is_open"),
-     Output("store-conversacion-actual", "data")],
+     Output("store-conversacion-actual", "data"),
+     Output("reply-status", "children", allow_duplicate=True),
+     Output("input-reply-mensaje", "value", allow_duplicate=True)],
     [Input({"type": "btn-ver-conversacion", "index": dash.dependencies.ALL}, "n_clicks"),
      Input("modal-conversacion-cerrar", "n_clicks")],
     [State("modal-conversacion", "is_open"),
@@ -1038,25 +1060,24 @@ def actualizar_tabla(personas, lang):
 def toggle_modal_conversacion(btn_ver_clicks, btn_cerrar, is_open, btn_ids):
     """Abrir/cerrar modal de conversación."""
     ctx = dash.callback_context
-    
+
     if not ctx.triggered:
-        return False, None
-    
+        return False, None, None, ""
+
     trigger_id = ctx.triggered[0]["prop_id"]
-    
-    # Si se clickeó cerrar
+
+    # Si se clickeó cerrar — limpiar reply también
     if "modal-conversacion-cerrar" in trigger_id:
-        return False, None
-    
+        return False, None, None, ""
+
     # Si se clickeó ver conversación
     if "btn-ver-conversacion" in trigger_id:
-        # Encontrar cuál botón fue clickeado
         for i, clicks in enumerate(btn_ver_clicks):
             if clicks:
                 analisis_id = btn_ids[i]["index"]
-                return True, analisis_id
-    
-    return False, None
+                return True, analisis_id, None, ""
+
+    return False, None, None, ""
 
 
 @app.callback(
@@ -1165,6 +1186,46 @@ def cargar_conversacion(analisis_id):
         return "Error", dbc.Alert(f"Error al cargar la conversación: {str(e)}", color="danger")
     
     return "Conversación", html.Div("No se pudo cargar la conversación")
+
+
+@app.callback(
+    [Output("reply-status", "children"),
+     Output("input-reply-mensaje", "value")],
+    Input("btn-reply-enviar", "n_clicks"),
+    [State("input-reply-mensaje", "value"),
+     State("store-conversacion-actual", "data")],
+    prevent_initial_call=True
+)
+def enviar_reply(n_clicks, texto, analisis_id):
+    """Enviar respuesta manual a la conversación activa."""
+    if not n_clicks or not texto or not texto.strip():
+        raise PreventUpdate
+
+    if not analisis_id:
+        return dbc.Alert("No hay conversación activa.", color="warning", className="py-1 px-2"), texto
+
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/api/conversaciones/{analisis_id}/responder",
+            json={"texto": texto.strip()},
+            timeout=10
+        )
+        if response.ok:
+            return dbc.Alert(
+                [html.I(className="fas fa-check-circle me-1"), "Message sent successfully."],
+                color="success", className="py-1 px-2 mb-0"
+            ), ""
+        else:
+            detail = response.json().get("detail", response.text)
+            return dbc.Alert(
+                [html.I(className="fas fa-exclamation-circle me-1"), f"Error: {detail}"],
+                color="danger", className="py-1 px-2 mb-0"
+            ), texto
+    except Exception as e:
+        return dbc.Alert(
+            [html.I(className="fas fa-exclamation-circle me-1"), f"Connection error: {str(e)}"],
+            color="danger", className="py-1 px-2 mb-0"
+        ), texto
 
 
 @app.callback(
@@ -1934,11 +1995,16 @@ def toggle_pages_modal(pages_data, cancel_clicks, connect_clicks, is_open):
         for page in pages_data:
             page_name = page.get('page_name', 'Página sin nombre')
             instagram_username = page.get('instagram_username')
-            
+            is_admin = page.get('is_admin', True)  # default True for backwards compat
+
             label_text = f"📘 {page_name}"
             if instagram_username:
                 label_text += f" + 📷 @{instagram_username}"
-            
+            if is_admin:
+                label_text += " ✔ Admin"
+            else:
+                label_text += " ⚠ Limited access"
+
             options.append({
                 'label': label_text,
                 'value': page.get('page_id')
