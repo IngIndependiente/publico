@@ -136,6 +136,7 @@ class WhatsAppClient:
                 # Metadata del negocio
                 metadata = value.get("metadata", {})
                 display_phone = metadata.get("display_phone_number", "")
+                phone_number_id = metadata.get("phone_number_id", "")
                 
                 return {
                     "phone": phone,
@@ -144,6 +145,7 @@ class WhatsAppClient:
                     "timestamp": timestamp,
                     "username": username,
                     "display_phone": display_phone,
+                    "phone_number_id": phone_number_id,
                     "message_type": message_type
                 }
             
