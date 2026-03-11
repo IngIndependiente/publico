@@ -278,6 +278,9 @@ def crear_contenido():
                     html.Hr(),
                 ]),
             ]),
+
+            # OAuth error banner (hidden by default, shown on oauth_error param)
+            html.Div(id="oauth-error-banner", className="mb-3"),
             
             # Conexión Facebook/Instagram (Multi-tenant)
             dbc.Row([
@@ -770,24 +773,39 @@ app.layout = html.Div([
      Output('url', 'pathname'),
      Output('url', 'search'),
      Output('store-facebook-user-id', 'data'),
-     Output('store-instagram-access-token', 'data')],
+     Output('store-instagram-access-token', 'data'),
+     Output('oauth-error-banner', 'children')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
 def cargar_paginas_oauth(href):
-    """Detecta oauth_token en la URL y recupera las páginas del backend."""
-    if not href or 'oauth_token=' not in href:
+    """Detecta oauth_token o oauth_error en la URL y actua en consecuencia."""
+    if not href:
         raise PreventUpdate
-    
+
+    from urllib.parse import urlparse, parse_qs, unquote
+    parsed = urlparse(href)
+    params = parse_qs(parsed.query)
+
+    # Handle oauth_error redirect from backend
+    if 'oauth_error' in params:
+        error_msg = unquote(params['oauth_error'][0])
+        banner = dbc.Alert(
+            [html.I(className="fas fa-exclamation-triangle me-2"), f"Facebook login error: {error_msg}"],
+            color="danger",
+            dismissable=True,
+            className="mb-0"
+        )
+        return dash.no_update, '/', '', dash.no_update, dash.no_update, banner
+
+    if 'oauth_token=' not in href:
+        raise PreventUpdate
+
+    token = params.get('oauth_token', [None])[0]
+    if not token:
+        raise PreventUpdate
+
     try:
-        from urllib.parse import urlparse, parse_qs
-        parsed = urlparse(href)
-        params = parse_qs(parsed.query)
-        token = params.get('oauth_token', [None])[0]
-        
-        if not token:
-            raise PreventUpdate
-        
         response = requests.get(f"{BACKEND_URL}/api/oauth-session/{token}", timeout=10)
         if response.ok:
             data = response.json()
@@ -795,11 +813,10 @@ def cargar_paginas_oauth(href):
             facebook_user_id = data.get('facebook_user_id')
             instagram_access_token = data.get('instagram_access_token')
             if pages:
-                # Limpiar el token de la URL (pathname y search)
-                return pages, '/', '', facebook_user_id, instagram_access_token
+                return pages, '/', '', facebook_user_id, instagram_access_token, dash.no_update
     except Exception as e:
         print(f"Error recuperando sesión OAuth: {e}")
-    
+
     raise PreventUpdate
 
 
