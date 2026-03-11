@@ -279,6 +279,16 @@ def crear_contenido():
                 ]),
             ]),
 
+            # OAuth status toast
+            dbc.Toast(
+                id="oauth-toast",
+                header="Facebook Login",
+                is_open=False,
+                dismissable=True,
+                duration=8000,
+                style={"position": "fixed", "top": 20, "right": 20, "zIndex": 9999, "minWidth": "300px"}
+            ),
+
             # Conexión Facebook/Instagram (Multi-tenant)
             dbc.Row([
                 dbc.Col([
@@ -768,44 +778,56 @@ app.layout = html.Div([
 @app.callback(
     [Output('store-facebook-pages', 'data'),
      Output('store-facebook-user-id', 'data'),
-     Output('store-instagram-access-token', 'data')],
+     Output('store-instagram-access-token', 'data'),
+     Output('oauth-toast', 'children'),
+     Output('oauth-toast', 'is_open'),
+     Output('oauth-toast', 'icon')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
 def cargar_paginas_oauth(href):
-    """Detecta oauth_token en la URL y carga las páginas disponibles.
-    
-    We intentionally do NOT clear the URL params here. Updating url.pathname/search
-    from this callback re-triggers the href Input, creating a race condition that
-    prevents toggle_pages_modal from reacting to the store update. The oauth_token
-    is one-time-use (consumed by the backend on first fetch), so leaving it in the
-    address bar is harmless — it will be gone on the next navigation.
-    """
+    """Detecta oauth_token o oauth_error en la URL y carga las páginas disponibles."""
+    no_toast = (dash.no_update, dash.no_update, dash.no_update, dash.no_update, False, dash.no_update)
+
     if not href:
         raise PreventUpdate
 
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import urlparse, parse_qs, unquote
     parsed = urlparse(href)
     params = parse_qs(parsed.query)
 
-    if 'oauth_error' in params or 'oauth_token' not in params:
+    # Show oauth_error from backend as a visible toast
+    if 'oauth_error' in params:
+        error_msg = unquote(params['oauth_error'][0])
+        print(f"[Frontend] oauth_error recibido: {error_msg}")
+        return dash.no_update, dash.no_update, dash.no_update, error_msg, True, "danger"
+
+    if 'oauth_token' not in params:
         raise PreventUpdate
 
     token = params['oauth_token'][0]
+    print(f"[Frontend] oauth_token recibido, consultando sesión...")
 
     try:
         response = requests.get(f"{BACKEND_URL}/api/oauth-session/{token}", timeout=10)
+        print(f"[Frontend] /api/oauth-session respuesta: {response.status_code}")
         if response.ok:
             data = response.json()
             pages = data.get('pages', [])
             facebook_user_id = data.get('facebook_user_id')
             instagram_access_token = data.get('instagram_access_token')
+            print(f"[Frontend] Páginas recibidas: {[p.get('page_name') for p in pages]}")
             if pages:
-                return pages, facebook_user_id, instagram_access_token
+                return pages, facebook_user_id, instagram_access_token, dash.no_update, False, dash.no_update
+            else:
+                return dash.no_update, dash.no_update, dash.no_update, "No se encontraron páginas en la sesión OAuth.", True, "warning"
+        else:
+            msg = f"Error al recuperar la sesión OAuth ({response.status_code}): {response.text[:200]}"
+            print(f"[Frontend] {msg}")
+            return dash.no_update, dash.no_update, dash.no_update, msg, True, "danger"
     except Exception as e:
-        print(f"Error recuperando sesión OAuth: {e}")
-
-    raise PreventUpdate
+        print(f"[Frontend] Error recuperando sesión OAuth: {e}")
+        return dash.no_update, dash.no_update, dash.no_update, f"Error de conexión: {e}", True, "danger"
 
 
 # === Callbacks ===
@@ -1977,50 +1999,36 @@ def guardar_config_whatsapp(n_clicks, candidato_id, phone_id, business_id, phone
      Input("btn-pages-cancel", "n_clicks"),
      Input("btn-pages-connect", "n_clicks")],
     [State("modal-pages-selection", "is_open")],
-    prevent_initial_call=False
+    prevent_initial_call=True
 )
 def toggle_pages_modal(pages_data, cancel_clicks, connect_clicks, is_open):
     """Abrir modal cuando hay páginas disponibles y manejar cerrado."""
     ctx = dash.callback_context
-    
-    if not ctx.triggered:
-        # Checklist inicial vacío
+    trigger = ctx.triggered_id if ctx.triggered else None
+    print(f"[toggle_pages_modal] trigger={trigger}, pages_data tipo={type(pages_data)}, len={len(pages_data) if pages_data else 0}")
+
+    if trigger in ("btn-pages-cancel", "btn-pages-connect"):
         return False, [], []
-    
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    
-    # Cerrar modal
-    if trigger_id in ["btn-pages-cancel", "btn-pages-connect"]:
-        return False, [], []
-    
-    # Si llegan páginas nuevas, abrir modal
-    if trigger_id == "store-facebook-pages" and pages_data and len(pages_data) > 0:
-        # Crear opciones para el checklist
+
+    if pages_data:
         options = []
         for page in pages_data:
             page_name = page.get('page_name', 'Página sin nombre')
             instagram_username = page.get('instagram_username')
-            is_admin = page.get('is_admin', True)  # default True for backwards compat
+            is_admin = page.get('is_admin', True)
 
             label_text = f"📘 {page_name}"
             if instagram_username:
                 label_text += f" + 📷 @{instagram_username}"
-            if is_admin:
-                label_text += " ✔ Admin"
-            else:
-                label_text += " ⚠ Limited access"
+            label_text += " ✔ Admin" if is_admin else " ⚠ Limited access"
 
-            options.append({
-                'label': label_text,
-                'value': page.get('page_id')
-            })
-        
-        # Seleccionar todas por defecto
+            options.append({'label': label_text, 'value': page.get('page_id')})
+
         all_values = [opt['value'] for opt in options]
-        
+        print(f"[toggle_pages_modal] Abriendo modal con {len(options)} páginas: {[o['value'] for o in options]}")
         return True, options, all_values
-    
-    return is_open, [], []
+
+    return False, [], []
 
 
 @app.callback(
