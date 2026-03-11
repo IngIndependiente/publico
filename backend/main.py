@@ -105,6 +105,8 @@ class BusquedaRequest(BaseModel):
     fecha_inicio: Optional[str] = None
     fecha_fin: Optional[str] = None
     facebook_user_id: Optional[str] = None
+    page: int = 0
+    page_size: int = 50
 
 
 # === Modelos Pydantic para Admin Usuarios ===
@@ -1431,102 +1433,190 @@ def buscar_personas(busqueda: BusquedaRequest):
         try:
              dt_fin = datetime.fromisoformat(busqueda.fecha_fin)
         except: pass
-        
-    # 2. Obtener Análisis filtrados por Fecha
-    if USE_DATAFRAMES:
-        # Modo DataFrames - no necesita db
-        analisis_candidates = AnalisisService.buscar_analisis(
-            fecha_inicio=dt_inicio, 
-            fecha_fin=dt_fin,
-            limit=1000 
-        )
-    else:
-        # Modo SQLAlchemy - necesita db
-        with get_db() as db:
-            analisis_candidates = AnalisisService.buscar_analisis(
-                db, 
-                fecha_inicio=dt_inicio, 
-                fecha_fin=dt_fin,
-                limit=1000 
-            )
-        
-    resultado = []
+
+    page = max(0, busqueda.page or 0)
+    page_size = max(1, min(busqueda.page_size or 50, 200))
     candidato_ids_owner = _get_candidato_ids_por_owner(busqueda.facebook_user_id)
-    
-    # 3. Filtrar por demografía y construir respuesta
+
+    # 2. Modo DataFrames: vectorizado, arrancando desde personas_df para incluir WhatsApp
     if USE_DATAFRAMES:
+        import numpy as np
         from backend.database.dataframe_storage import get_storage
         storage = get_storage()
-        
-        for analisis in analisis_candidates:
-            persona_id = analisis['persona_id']
-            persona = PersonaService.obtener_persona_por_id(persona_id)
-            
-            if not persona: 
-                continue
 
-            # Filtro por propietario
-            if candidato_ids_owner is not None and persona.get('candidato_id') not in candidato_ids_owner:
-                continue
-            
-            # Filtros demográficos
-            if busqueda.genero and persona.get('genero') != busqueda.genero:
-                continue
-            if busqueda.edad_min and (not persona.get('edad') or pd.isna(persona['edad']) or persona['edad'] < busqueda.edad_min):
-                continue
-            if busqueda.edad_max and (not persona.get('edad') or pd.isna(persona['edad']) or persona['edad'] > busqueda.edad_max):
-                continue
-            if busqueda.ubicacion and (not persona.get('ubicacion') or busqueda.ubicacion.lower() not in persona['ubicacion'].lower()):
-                continue
-            
-            # Obtener intereses
+        personas_df = storage.personas_df.copy()
+        for col in ('fecha_ultimo_contacto', 'fecha_primer_contacto'):
+            if col in personas_df.columns and not pd.api.types.is_datetime64_any_dtype(personas_df[col]):
+                personas_df[col] = pd.to_datetime(personas_df[col], errors='coerce')
+
+        adf = storage.analisis_df.copy()
+        if not adf.empty and 'start_conversation' in adf.columns:
+            if not pd.api.types.is_datetime64_any_dtype(adf['start_conversation']):
+                adf['start_conversation'] = pd.to_datetime(adf['start_conversation'], errors='coerce')
+
+        ft_inicio = dt_inicio.replace(tzinfo=None) if (dt_inicio and dt_inicio.tzinfo) else dt_inicio
+        ft_fin = dt_fin.replace(tzinfo=None) if (dt_fin and dt_fin.tzinfo) else dt_fin
+
+        # Filtro de fecha: personas con analisis en el rango O (WhatsApp) con último contacto en rango
+        persona_ids_en_rango = None
+        if ft_inicio or ft_fin:
+            adf_rango = adf.copy() if not adf.empty else pd.DataFrame(columns=['persona_id', 'start_conversation'])
+            if ft_inicio:
+                adf_rango = adf_rango[adf_rango['start_conversation'] >= ft_inicio]
+            if ft_fin:
+                adf_rango = adf_rango[adf_rango['start_conversation'] <= ft_fin]
+            ids_via_analisis = set(adf_rango['persona_id'].tolist())
+
+            # WhatsApp-only personas: sin facebook_id ni instagram_id, con teléfono
+            wa_mask = (
+                personas_df['telefono'].notna() &
+                (personas_df['facebook_id'].isna() | (personas_df['facebook_id'].astype(str) == '')) &
+                (personas_df['instagram_id'].isna() | (personas_df['instagram_id'].astype(str) == ''))
+            )
+            wa_df = personas_df[wa_mask]
+            if not wa_df.empty:
+                fuc = wa_df['fecha_ultimo_contacto']
+                wa_ok = pd.Series(True, index=wa_df.index)
+                if ft_inicio:
+                    wa_ok &= fuc >= ft_inicio
+                if ft_fin:
+                    wa_ok &= fuc <= ft_fin
+                ids_via_wa = set(wa_df[wa_ok]['id'].tolist())
+            else:
+                ids_via_wa = set()
+
+            persona_ids_en_rango = ids_via_analisis | ids_via_wa
+
+        # Filtros demográficos y de propietario (vectorizados sobre personas_df)
+        if candidato_ids_owner is not None:
+            personas_df = personas_df[personas_df['candidato_id'].isin(set(candidato_ids_owner))]
+        if persona_ids_en_rango is not None:
+            personas_df = personas_df[personas_df['id'].isin(persona_ids_en_rango)]
+        if busqueda.genero:
+            personas_df = personas_df[personas_df['genero'] == busqueda.genero]
+        if busqueda.edad_min is not None:
+            personas_df = personas_df[pd.to_numeric(personas_df['edad'], errors='coerce') >= busqueda.edad_min]
+        if busqueda.edad_max is not None:
+            personas_df = personas_df[pd.to_numeric(personas_df['edad'], errors='coerce') <= busqueda.edad_max]
+        if busqueda.ubicacion:
+            personas_df = personas_df[personas_df['ubicacion'].fillna('').str.lower().str.contains(busqueda.ubicacion.lower(), regex=False)]
+
+        if personas_df.empty:
+            return {"total": 0, "total_paginas": 0, "personas": [], "stats": {"por_genero": {}, "por_interes": {}}}
+
+        # Analisis deduplicado: el más reciente por persona (para LEFT JOIN)
+        if not adf.empty:
+            adf_dedup = (
+                adf.sort_values('start_conversation', ascending=False)
+                .drop_duplicates(subset=['persona_id'], keep='first')
+                [['persona_id', 'id', 'resumen', 'categorias', 'start_conversation', 'fecha_analisis']]
+                .rename(columns={'id': '_analisis_id', 'resumen': '_resumen_analisis'})
+            )
+        else:
+            adf_dedup = pd.DataFrame(columns=['persona_id', '_analisis_id', '_resumen_analisis', 'categorias', 'start_conversation', 'fecha_analisis'])
+
+        # LEFT JOIN: todas las personas + su analisis más reciente (si tienen)
+        merged = personas_df.merge(adf_dedup, left_on='id', right_on='persona_id', how='left')
+
+        # Filtro por intereses (analisis.categorias; personas WA sin analisis no son excluidas si no hay filtro)
+        if busqueda.intereses:
+            filtro = set(busqueda.intereses)
+            def _has_interes(cat_json):
+                if not cat_json or (isinstance(cat_json, float) and pd.isna(cat_json)):
+                    return False
+                try:
+                    cats = json.loads(cat_json) if isinstance(cat_json, str) else []
+                    return bool(set(cats) & filtro)
+                except:
+                    return False
+            merged = merged[merged['categorias'].apply(_has_interes)]
+
+        # Derivar plataforma vectorizado
+        ig_ok = merged['instagram_id'].notna() & (merged['instagram_id'].astype(str).str.strip().ne(''))
+        fb_ok = merged['facebook_id'].notna() & (merged['facebook_id'].astype(str).str.strip().ne(''))
+        wa_ok = merged['telefono'].notna() & (merged['telefono'].astype(str).str.strip().ne(''))
+        merged['_plataforma'] = np.select([ig_ok, fb_ok, wa_ok], ['instagram', 'messenger', 'whatsapp'], default=None)
+
+        # Ordenar por fecha más reciente disponible
+        merged['_fecha_sort'] = merged['start_conversation'].combine_first(
+            merged.get('fecha_ultimo_contacto', pd.Series(dtype='datetime64[ns]'))
+        )
+        merged = merged.sort_values('_fecha_sort', ascending=False, na_position='last')
+
+        # Estadísticas sobre el conjunto filtrado completo (antes de paginar)
+        total = len(merged)
+        total_paginas = max(1, (total + page_size - 1) // page_size)
+        generos_list = merged['genero'].fillna('No especificado').tolist()
+        all_intereses_flat = []
+        for cat in merged['categorias'].dropna():
+            try:
+                all_intereses_flat.extend(json.loads(cat) if isinstance(cat, str) else [])
+            except:
+                pass
+        stats = {
+            "por_genero": dict(Counter(generos_list)),
+            "por_interes": dict(Counter(all_intereses_flat))
+        }
+
+        # Paginación: solo construir dicts para la página actual
+        paged = merged.iloc[page * page_size: (page + 1) * page_size]
+        resultado = []
+        for _, row in paged.iterrows():
             intereses = []
             try:
-                if analisis.get('categorias'):
-                    intereses = json.loads(analisis['categorias'])
-                else:
-                    # Buscar intereses de la persona
-                    rel_mask = storage.persona_interes_df['persona_id'] == persona_id
+                cat = row.get('categorias')
+                if cat and not (isinstance(cat, float) and pd.isna(cat)):
+                    intereses = json.loads(cat) if isinstance(cat, str) else []
+            except:
+                pass
+            if not intereses:
+                pid = int(row['id']) if pd.notna(row.get('id')) else None
+                if pid:
+                    rel_mask = storage.persona_interes_df['persona_id'] == pid
                     if rel_mask.any():
                         interes_ids = storage.persona_interes_df[rel_mask]['interes_id'].values
-                        intereses_mask = storage.intereses_df['id'].isin(interes_ids)
-                        intereses = storage.intereses_df[intereses_mask]['categoria'].tolist()
-            except:
-                intereses = []
-            
-            if busqueda.intereses:
-                # Check intersection
-                if not any(i in intereses for i in busqueda.intereses):
-                    continue
+                        intereses = storage.intereses_df[storage.intereses_df['id'].isin(interes_ids)]['categoria'].tolist()
 
+            aid = row.get('_analisis_id')
+            fc = row.get('fecha_primer_contacto')
+            fecha_uc = row.get('_fecha_sort')
             resultado.append({
-                "id": persona['id'],
-                "analisis_id": analisis['id'],
-                "nombre_completo": persona.get('nombre_completo'),
-                "edad": int(persona['edad']) if pd.notna(persona.get('edad')) else None,
-                "genero": persona.get('genero'),
-                "telefono": persona.get('telefono'),
-                "email": persona.get('email'),
-                "ocupacion": persona.get('ocupacion'),
-                "ubicacion": persona.get('ubicacion'),
-                "facebook_username": persona.get('facebook_username'),
-                "instagram_username": persona.get('instagram_username'),
+                "id": int(row['id']) if pd.notna(row.get('id')) else None,
+                "analisis_id": int(aid) if pd.notna(aid) else 0,
+                "nombre_completo": row.get('nombre_completo'),
+                "edad": int(row['edad']) if pd.notna(row.get('edad')) else None,
+                "genero": row.get('genero'),
+                "telefono": row.get('telefono'),
+                "email": row.get('email'),
+                "ocupacion": row.get('ocupacion'),
+                "ubicacion": row.get('ubicacion'),
+                "facebook_username": row.get('facebook_username'),
+                "instagram_username": row.get('instagram_username'),
                 "intereses": intereses,
-                "resumen_conversacion": analisis.get('resumen'),
-                "fecha_primer_contacto": persona.get('fecha_primer_contacto'),
-                "fecha_ultimo_contacto": analisis.get('start_conversation') or analisis.get('fecha_analisis')
+                "resumen_conversacion": row.get('_resumen_analisis'),
+                "fecha_primer_contacto": str(fc) if pd.notna(fc) else None,
+                "fecha_ultimo_contacto": str(fecha_uc) if pd.notna(fecha_uc) else None,
+                "plataforma": row.get('_plataforma'),
             })
+
+        return {"total": total, "total_paginas": total_paginas, "personas": resultado, "stats": stats}
+
     else:
         # Modo SQLAlchemy
+        resultado = []
+        with get_db() as db:
+            analisis_candidates = AnalisisService.buscar_analisis(
+                db,
+                fecha_inicio=dt_inicio,
+                fecha_fin=dt_fin,
+                limit=1000
+            )
         for analisis in analisis_candidates:
             persona = analisis.persona
-            if not persona: continue # Safety check
-
-            # Filtro por propietario
+            if not persona:
+                continue
             if candidato_ids_owner is not None and persona.candidato_id not in candidato_ids_owner:
                 continue
-            
-            # Filtros demográficos
             if busqueda.genero and persona.genero != busqueda.genero:
                 continue
             if busqueda.edad_min and (not persona.edad or persona.edad < busqueda.edad_min):
@@ -1536,18 +1626,17 @@ def buscar_personas(busqueda: BusquedaRequest):
             if busqueda.ubicacion and (not persona.ubicacion or busqueda.ubicacion.lower() not in persona.ubicacion.lower()):
                 continue
             if busqueda.intereses:
-                 # Check intersection
-                 p_intereses = [i.categoria for i in persona.intereses]
-                 if not any(i in p_intereses for i in busqueda.intereses):
-                     continue
-
-            # Formatear intereses
+                p_intereses = [i.categoria for i in persona.intereses]
+                if not any(i in p_intereses for i in busqueda.intereses):
+                    continue
             intereses = []
             try:
-                if analisis.categorias: intereses = json.loads(analisis.categorias)
-                elif persona.intereses: intereses = [i.categoria for i in persona.intereses]
-            except: intereses = []
-
+                if analisis.categorias:
+                    intereses = json.loads(analisis.categorias)
+                elif persona.intereses:
+                    intereses = [i.categoria for i in persona.intereses]
+            except:
+                intereses = []
             resultado.append({
                 "id": persona.id,
                 "analisis_id": analisis.id,
@@ -1563,23 +1652,27 @@ def buscar_personas(busqueda: BusquedaRequest):
                 "intereses": intereses,
                 "resumen_conversacion": analisis.resumen,
                 "fecha_primer_contacto": persona.fecha_primer_contacto,
-                "fecha_ultimo_contacto": analisis.start_conversation or analisis.fecha_analisis
+                "fecha_ultimo_contacto": analisis.start_conversation or analisis.fecha_analisis,
+                "plataforma": (
+                    "instagram" if getattr(persona, "instagram_id", None) else
+                    "messenger" if getattr(persona, "facebook_id", None) else
+                    "whatsapp" if getattr(persona, "telefono", None) else None
+                ),
             })
-    
-    # 4. Calcular Estadísticas Filtradas
-    generos = [p["genero"] or "No especificado" for p in resultado]
-    intereses_flat = [i for p in resultado for i in p["intereses"]]
-    
-    stats = {
-        "por_genero": dict(Counter(generos)),
-        "por_interes": dict(Counter(intereses_flat))
-    }
-    
-    return {
-        "total": len(resultado),
-        "personas": resultado[:100], # Paginación simple
-        "stats": stats
-    }
+        generos = [p["genero"] or "No especificado" for p in resultado]
+        intereses_flat = [i for p in resultado for i in p["intereses"]]
+        stats = {
+            "por_genero": dict(Counter(generos)),
+            "por_interes": dict(Counter(intereses_flat))
+        }
+        total_paginas = max(1, (len(resultado) + page_size - 1) // page_size)
+        return {
+            "total": len(resultado),
+            "total_paginas": total_paginas,
+            "personas": resultado[page * page_size: (page + 1) * page_size],
+            "stats": stats
+        }
+        
 
 
 @app.post("/api/personas/exportar")
@@ -2916,6 +3009,17 @@ def procesar_mensaje_whatsapp(phone: str, texto: str, username: str, message_id:
                     es_enviado=False,
                     datos_extraidos=datos_extraidos
                 )
+
+                # Crear/actualizar análisis del día (permite que WA aparezca en búsquedas)
+                _hoy_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                _resumen_wa = datos_extraidos.get("resumen_conversacional") or texto[:120]
+                AnalisisService.crear_analisis(
+                    persona_id=persona_id,
+                    resumen=_resumen_wa,
+                    contenido_completo=texto,
+                    categorias=datos_extraidos.get("intereses"),
+                    start_conversation=_hoy_utc
+                )
             else:
                 with get_db() as db:
                     # Actualizar persona
@@ -2937,7 +3041,19 @@ def procesar_mensaje_whatsapp(phone: str, texto: str, username: str, message_id:
                         es_enviado=False,
                         datos_extraidos=datos_extraidos
                     )
-            
+
+                    # Crear/actualizar análisis del día
+                    _hoy_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                    _resumen_wa = datos_extraidos.get("resumen_conversacional") or texto[:120]
+                    AnalisisService.crear_analisis(
+                        db,
+                        persona_id=persona.id,
+                        resumen=_resumen_wa,
+                        contenido_completo=texto,
+                        categorias=datos_extraidos.get("intereses"),
+                        start_conversation=_hoy_utc
+                    )
+
             # RESPUESTA AUTOMÁTICA CON BOTONES INTERACTIVOS
             nombre = datos_extraidos.get("nombre_completo", "")
             intereses = datos_extraidos.get("intereses", [])

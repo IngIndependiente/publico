@@ -389,9 +389,18 @@ def crear_contenido():
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader([
-                            html.H5("Resultados de Búsqueda", className="mb-0", id="ch-resultados-busqueda")
-                        ]),
+                        dbc.CardHeader(
+                            html.Div([
+                                html.H5("Resultados de Búsqueda", className="mb-0", id="ch-resultados-busqueda"),
+                                html.Div([
+                                    dbc.Button(html.I(className="fas fa-chevron-left"), id="btn-pagina-anterior",
+                                               color="outline-secondary", size="sm", className="me-2"),
+                                    html.Span(id="texto-pagina", className="small text-muted mx-1"),
+                                    dbc.Button(html.I(className="fas fa-chevron-right"), id="btn-pagina-siguiente",
+                                               color="outline-secondary", size="sm", className="ms-2"),
+                                ], className="d-flex align-items-center"),
+                            ], className="d-flex align-items-center justify-content-between")
+                        ),
                         dbc.CardBody([
                             html.Div(id="tabla-resultados")
                         ])
@@ -582,12 +591,14 @@ def crear_contenido():
             dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
+            dcc.Store(id="store-pagina-actual", data=0),
+            dcc.Store(id="store-total-paginas", data=1),
             dcc.Download(id="download-csv"),
             dcc.Interval(id="interval-sync-candidato", interval=2500, n_intervals=0, disabled=True),
             # Interval para actualización automática
             dcc.Interval(
                 id="interval-actualizacion",
-                interval=30*1000,  # 30 segundos
+                interval=5*60*1000,  # 5 minutos
                 n_intervals=0
             ),
 
@@ -906,9 +917,11 @@ def actualizar_graficos(stats, lang):
     [Output("store-datos-personas", "data"),
      Output("stat-resultados", "children"),
      Output("stat-actualizacion", "children"),
-     Output("store-stats-filtradas", "data")],
+     Output("store-stats-filtradas", "data"),
+     Output("store-total-paginas", "data")],
     [Input("btn-buscar", "n_clicks"),
-     Input("interval-actualizacion", "n_intervals")],
+     Input("interval-actualizacion", "n_intervals"),
+     Input("store-pagina-actual", "data")],
     [State("filtro-fecha-inicio", "value"),
      State("filtro-fecha-fin", "value"),
      State("filtro-genero", "value"),
@@ -919,11 +932,11 @@ def actualizar_graficos(stats, lang):
      State("store-facebook-user-id", "data")],
     prevent_initial_call=False
 )
-def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
+def buscar_personas(n_clicks, n_intervals, pagina_actual, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
     """Buscar personas según filtros."""
     # No hay usuario autenticado — no mostrar datos de nadie
     if not facebook_user_id:
-        return [], "0", "—", {}
+        return [], "0", "—", {}, 0
 
     # Construir payload
     payload = {}
@@ -944,6 +957,8 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
         payload["ubicacion"] = ubicacion
     if facebook_user_id:
         payload["facebook_user_id"] = facebook_user_id
+    payload["page"] = pagina_actual or 0
+    payload["page_size"] = 50
     
     try:
         response = requests.post(
@@ -956,10 +971,11 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
             data = response.json()
             personas = data.get("personas", [])
             total = data.get("total", 0)
+            total_paginas = data.get("total_paginas", 1)
             stats = data.get("stats", {}) # Obtener estadísticas
-            print(f"[buscar_personas] OK – total={total}, personas={len(personas)}, stats={stats}")
+            print(f"[buscar_personas] OK – total={total}, pág={pagina_actual}/{total_paginas}, personas={len(personas)}")
             ahora = ahora_cl().strftime("%d/%m/%Y %H:%M:%S")
-            return personas, str(total), ahora, stats
+            return personas, str(total), ahora, stats, total_paginas
         else:
             print(f"[buscar_personas] HTTP {response.status_code}: {response.text[:1000]}")
     except Exception as e:
@@ -975,7 +991,43 @@ def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad
     except Exception:
         pass
 
-    return [], "0", "Error", {}
+    return [], "0", "Error", {}, 0
+
+
+@app.callback(
+    Output("store-pagina-actual", "data"),
+    [Input("btn-buscar", "n_clicks"),
+     Input("btn-pagina-anterior", "n_clicks"),
+     Input("btn-pagina-siguiente", "n_clicks")],
+    [State("store-pagina-actual", "data"),
+     State("store-total-paginas", "data")],
+    prevent_initial_call=True
+)
+def cambiar_pagina(n_buscar, n_anterior, n_siguiente, pagina, total_paginas):
+    """Gestionar la página actual de resultados."""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return pagina or 0
+    trigger = ctx.triggered[0]["prop_id"]
+    if "btn-buscar" in trigger:
+        return 0
+    elif "btn-pagina-anterior" in trigger:
+        return max(0, (pagina or 0) - 1)
+    elif "btn-pagina-siguiente" in trigger:
+        return min((total_paginas or 1) - 1, (pagina or 0) + 1)
+    return pagina or 0
+
+
+@app.callback(
+    Output("texto-pagina", "children"),
+    [Input("store-pagina-actual", "data"),
+     Input("store-total-paginas", "data")]
+)
+def actualizar_display_pagina(pagina, total_paginas):
+    """Actualizar el display de paginación."""
+    p = (pagina or 0) + 1
+    tp = total_paginas or 1
+    return f"Pág. {p} de {tp}"
 
 
 @app.callback(
