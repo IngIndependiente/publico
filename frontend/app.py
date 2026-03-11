@@ -279,9 +279,6 @@ def crear_contenido():
                 ]),
             ]),
 
-            # OAuth error banner (hidden by default, shown on oauth_error param)
-            html.Div(id="oauth-error-banner", className="mb-3"),
-            
             # Conexión Facebook/Instagram (Multi-tenant)
             dbc.Row([
                 dbc.Col([
@@ -773,8 +770,7 @@ app.layout = html.Div([
      Output('url', 'pathname'),
      Output('url', 'search'),
      Output('store-facebook-user-id', 'data'),
-     Output('store-instagram-access-token', 'data'),
-     Output('oauth-error-banner', 'children')],
+     Output('store-instagram-access-token', 'data')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
@@ -787,16 +783,9 @@ def cargar_paginas_oauth(href):
     parsed = urlparse(href)
     params = parse_qs(parsed.query)
 
-    # Handle oauth_error redirect from backend
+    # Clear oauth_error param from URL without showing anything
     if 'oauth_error' in params:
-        error_msg = unquote(params['oauth_error'][0])
-        banner = dbc.Alert(
-            [html.I(className="fas fa-exclamation-triangle me-2"), f"Facebook login error: {error_msg}"],
-            color="danger",
-            dismissable=True,
-            className="mb-0"
-        )
-        return dash.no_update, '/', '', dash.no_update, dash.no_update, banner
+        return dash.no_update, '/', '', dash.no_update, dash.no_update
 
     if 'oauth_token=' not in href:
         raise PreventUpdate
