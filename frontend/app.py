@@ -802,7 +802,7 @@ def cargar_paginas_oauth(href):
             facebook_user_id = data.get('facebook_user_id')
             instagram_access_token = data.get('instagram_access_token')
             if pages:
-                return pages, '/', '', facebook_user_id, instagram_access_token, dash.no_update
+                return pages, '/', '', facebook_user_id, instagram_access_token
     except Exception as e:
         print(f"Error recuperando sesión OAuth: {e}")
 
@@ -2202,5 +2202,5 @@ if __name__ == "__main__":
     app.run(
         host=config.FRONTEND_HOST,
         port=config.FRONTEND_PORT,
-        debug=True
+        debug=config.DEBUG_MODE
     )
