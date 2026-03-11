@@ -1056,18 +1056,24 @@ def actualizar_tabla(personas, lang):
         else:
             nombre_display = nombre
         
-        analisis_id = p.get("analisis_id") or 0
+        # analisis_id puede ser negativo (= -persona_id) cuando no hay análisis real
+        analisis_id = p.get("analisis_id")
+        if analisis_id is None:
+            analisis_id = -(p.get("id") or 0)
+        tiene_analisis = analisis_id is not None and analisis_id > 0
         evento_nombre = p.get("evento_nombre") or "Sin asignar"
+        # Unique index for Dash pattern-matching IDs: always non-None and unique per row
+        row_index = analisis_id if analisis_id is not None else -(p.get("id") or 0)
         
         row = html.Tr([
             html.Td(
                 dbc.Button(
                     [html.I(className="fas fa-comments me-1"), t("tabla_ver", lang)],
-                    id={"type": "btn-ver-conversacion", "index": analisis_id},
-                    color="primary" if analisis_id else "secondary",
+                    id={"type": "btn-ver-conversacion", "index": row_index},
+                    color="primary" if tiene_analisis else "secondary",
                     size="sm",
                     className="w-100",
-                    disabled=not analisis_id,
+                    disabled=not tiene_analisis,
                 ),
                 style={'width': '100px', 'textAlign': 'center'}
             ),
@@ -1085,13 +1091,14 @@ def actualizar_tabla(personas, lang):
             ),
             html.Td([
                 dcc.Dropdown(
-                    id={"type": "dropdown-evento", "index": analisis_id},
+                    id={"type": "dropdown-evento", "index": row_index},
                     className="evento-dropdown",
                     style={'minWidth': '150px'},
-                    clearable=False
+                    clearable=False,
+                    disabled=not tiene_analisis,
                 ),
-                html.Div(id={"type": "evento-status", "index": analisis_id}, style={'fontSize': '0.7rem', 'marginTop': '2px'})
-            ], id={"type": "td-evento", "index": analisis_id}),
+                html.Div(id={"type": "evento-status", "index": row_index}, style={'fontSize': '0.7rem', 'marginTop': '2px'})
+            ], id={"type": "td-evento", "index": row_index}),
             html.Td(p["edad"] or "N/A"),
             html.Td(p["genero"] or "N/A"),
             html.Td(p["telefono"] or "N/A"),
@@ -1445,6 +1452,10 @@ def actualizar_evento_status(evento_id, dropdown_id, options):
         return ""
 
     analisis_id = dropdown_id["index"]
+
+    # analisis_id negativo significa persona sin análisis real — no hay nada que actualizar
+    if analisis_id is None or analisis_id <= 0:
+        return ""
 
     # Buscar si el evento seleccionado es "Otros"
     evento_seleccionado = next((opt for opt in options if opt["value"] == evento_id), None)

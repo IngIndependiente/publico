@@ -1505,15 +1505,20 @@ def buscar_personas(busqueda: BusquedaRequest):
             return {"total": 0, "total_paginas": 0, "personas": [], "stats": {"por_genero": {}, "por_interes": {}}}
 
         # Analisis deduplicado: el más reciente por persona (para LEFT JOIN)
+        adf_cols = ['persona_id', 'id', 'resumen', 'categorias', 'start_conversation', 'fecha_analisis', 'evento_id']
         if not adf.empty:
+            # Incluir solo columnas que existen
+            existing_cols = [c for c in adf_cols if c in adf.columns]
             adf_dedup = (
                 adf.sort_values('start_conversation', ascending=False)
                 .drop_duplicates(subset=['persona_id'], keep='first')
-                [['persona_id', 'id', 'resumen', 'categorias', 'start_conversation', 'fecha_analisis']]
+                [existing_cols]
                 .rename(columns={'id': '_analisis_id', 'resumen': '_resumen_analisis'})
             )
+            if 'evento_id' not in adf_dedup.columns:
+                adf_dedup['evento_id'] = None
         else:
-            adf_dedup = pd.DataFrame(columns=['persona_id', '_analisis_id', '_resumen_analisis', 'categorias', 'start_conversation', 'fecha_analisis'])
+            adf_dedup = pd.DataFrame(columns=['persona_id', '_analisis_id', '_resumen_analisis', 'categorias', 'start_conversation', 'fecha_analisis', 'evento_id'])
 
         # LEFT JOIN: todas las personas + su analisis más reciente (si tienen)
         merged = personas_df.merge(adf_dedup, left_on='id', right_on='persona_id', how='left')
@@ -1580,9 +1585,19 @@ def buscar_personas(busqueda: BusquedaRequest):
             aid = row.get('_analisis_id')
             fc = row.get('fecha_primer_contacto')
             fecha_uc = row.get('_fecha_sort')
+            eid = row.get('evento_id')
+            evento_id_val = int(eid) if pd.notna(eid) else None
+            evento_nombre_val = None
+            if evento_id_val:
+                ev = EventoService.obtener_por_id(evento_id_val)
+                if ev:
+                    evento_nombre_val = ev.get('nombre')
+            # Use negative persona_id as fallback analisis_id to ensure unique Dash component IDs
+            pid_val = int(row['id']) if pd.notna(row.get('id')) else None
+            analisis_id_val = int(aid) if pd.notna(aid) else (-(pid_val) if pid_val else None)
             resultado.append({
-                "id": int(row['id']) if pd.notna(row.get('id')) else None,
-                "analisis_id": int(aid) if pd.notna(aid) else 0,
+                "id": pid_val,
+                "analisis_id": analisis_id_val,
                 "nombre_completo": row.get('nombre_completo'),
                 "edad": int(row['edad']) if pd.notna(row.get('edad')) else None,
                 "genero": row.get('genero'),
@@ -1597,6 +1612,8 @@ def buscar_personas(busqueda: BusquedaRequest):
                 "fecha_primer_contacto": str(fc) if pd.notna(fc) else None,
                 "fecha_ultimo_contacto": str(fecha_uc) if pd.notna(fecha_uc) else None,
                 "plataforma": row.get('_plataforma'),
+                "evento_id": evento_id_val,
+                "evento_nombre": evento_nombre_val,
             })
 
         return {"total": total, "total_paginas": total_paginas, "personas": resultado, "stats": stats}
