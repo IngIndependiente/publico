@@ -767,32 +767,31 @@ app.layout = html.Div([
 # === Callback para leer páginas via token OAuth (cross-origin safe) ===
 @app.callback(
     [Output('store-facebook-pages', 'data'),
-     Output('url', 'pathname'),
-     Output('url', 'search'),
      Output('store-facebook-user-id', 'data'),
      Output('store-instagram-access-token', 'data')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
 def cargar_paginas_oauth(href):
-    """Detecta oauth_token o oauth_error en la URL y actua en consecuencia."""
+    """Detecta oauth_token en la URL y carga las páginas disponibles.
+    
+    We intentionally do NOT clear the URL params here. Updating url.pathname/search
+    from this callback re-triggers the href Input, creating a race condition that
+    prevents toggle_pages_modal from reacting to the store update. The oauth_token
+    is one-time-use (consumed by the backend on first fetch), so leaving it in the
+    address bar is harmless — it will be gone on the next navigation.
+    """
     if not href:
         raise PreventUpdate
 
-    from urllib.parse import urlparse, parse_qs, unquote
+    from urllib.parse import urlparse, parse_qs
     parsed = urlparse(href)
     params = parse_qs(parsed.query)
 
-    # Clear oauth_error param from URL without showing anything
-    if 'oauth_error' in params:
-        return dash.no_update, '/', '', dash.no_update, dash.no_update
-
-    if 'oauth_token=' not in href:
+    if 'oauth_error' in params or 'oauth_token' not in params:
         raise PreventUpdate
 
-    token = params.get('oauth_token', [None])[0]
-    if not token:
-        raise PreventUpdate
+    token = params['oauth_token'][0]
 
     try:
         response = requests.get(f"{BACKEND_URL}/api/oauth-session/{token}", timeout=10)
@@ -802,7 +801,7 @@ def cargar_paginas_oauth(href):
             facebook_user_id = data.get('facebook_user_id')
             instagram_access_token = data.get('instagram_access_token')
             if pages:
-                return pages, '/', '', facebook_user_id, instagram_access_token
+                return pages, facebook_user_id, instagram_access_token
     except Exception as e:
         print(f"Error recuperando sesión OAuth: {e}")
 
