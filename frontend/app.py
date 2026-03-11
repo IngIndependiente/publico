@@ -921,6 +921,10 @@ def actualizar_graficos(stats, lang):
 )
 def buscar_personas(n_clicks, n_intervals, fecha_inicio, fecha_fin, genero, edad_min, edad_max, intereses, ubicacion, facebook_user_id):
     """Buscar personas según filtros."""
+    # No hay usuario autenticado — no mostrar datos de nadie
+    if not facebook_user_id:
+        return [], "0", "—", {}
+
     # Construir payload
     payload = {}
     # Solo enviar fechas si tienen valor y no son cadenas vacías
@@ -1637,10 +1641,23 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
                                 id={"type": "date-sync-candidato", "index": candidato_id},
                                 max_date_allowed=datetime.today().strftime("%Y-%m-%d"),
                                 min_date_allowed="2020-01-01",
-                                placeholder="Últimos 3 meses",
+                                date=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
+                                initial_visible_month=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
                                 display_format="DD/MM/YYYY",
                                 clearable=True,
                                 style={"width": "100%", "fontSize": "0.8rem"},
+                            ),
+                        ], className="mb-2"),
+                        html.Div([
+                            html.Small("Máx. conversaciones:", className="text-muted d-block mb-1"),
+                            dbc.Input(
+                                id={"type": "input-limit-candidato", "index": candidato_id},
+                                type="number",
+                                value=50,
+                                min=1,
+                                max=500,
+                                step=1,
+                                size="sm",
                             ),
                         ], className="mb-2"),
                         dbc.Row([
@@ -1696,10 +1713,11 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
     [State("store-sync-candidatos", "data"),
      State({"type": "status-sincronizacion", "index": dash.dependencies.ALL}, "id"),
      State({"type": "switch-force-reprocess", "index": dash.dependencies.ALL}, "value"),
-     State({"type": "date-sync-candidato", "index": dash.dependencies.ALL}, "date")],
+     State({"type": "date-sync-candidato", "index": dash.dependencies.ALL}, "date"),
+     State({"type": "input-limit-candidato", "index": dash.dependencies.ALL}, "value")],
     prevent_initial_call=True
 )
-def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates):
+def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates, all_limits):
     """Lanza sincronización en background; habilita el interval de polling."""
     ctx = dash.callback_context
     if not ctx.triggered or not any(c for c in all_clicks if c):
@@ -1717,14 +1735,16 @@ def iniciar_sync_candidato(all_clicks, store_data, all_ids, all_force, all_dates
     # Determinar force_reprocess y desde_fecha para este candidato
     force = False
     desde_fecha = None
-    for id_dict, fval, dval in zip(all_ids, all_force, all_dates):
+    limit = 50
+    for id_dict, fval, dval, lval in zip(all_ids, all_force, all_dates, all_limits or []):
         if id_dict["index"] == candidato_id:
             force = bool(fval)
-            desde_fecha = dval  # ISO date string "YYYY-MM-DD" o None
+            desde_fecha = dval
+            limit = int(lval) if lval else 50
             break
 
     # Construir parámetros de la llamada
-    params = {"limit": 50, "force_reprocess": force}
+    params = {"limit": limit, "force_reprocess": force}
     if desde_fecha:
         params["desde_fecha"] = desde_fecha
     else:
