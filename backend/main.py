@@ -422,10 +422,11 @@ async def facebook_callback(
         if not pages:
             from urllib.parse import quote
             error_msg = quote(
-                "No Facebook Pages were found linked to your account. "
-                "This usually means you did not select any Pages in the Facebook Login dialog. "
-                "Please try connecting again and make sure to select your Page when Facebook asks "
-                "which Pages to share with this app."
+                "No Facebook Pages were found for your account. "
+                "During the Facebook Login, there is a step titled 'What can [App] access?' or "
+                "'Choose Pages' where you must select which Pages to share. "
+                "Please go to Facebook Settings > Security and Login > Business Integrations, "
+                "remove this app, then reconnect and carefully select your Page in the login dialog."
             )
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url=f"{config.FRONTEND_URL}/?oauth_error={error_msg}")
