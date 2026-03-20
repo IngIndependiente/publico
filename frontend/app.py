@@ -106,6 +106,7 @@ BACKEND_URL = config.BACKEND_URL
 app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],
+    suppress_callback_exceptions=True,
     meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
     ]
@@ -137,6 +138,93 @@ MOBILE_STYLE = {
 }
 
 # === Componentes ===
+
+def crear_pagina_privacidad():
+    """Página independiente de Política de Privacidad (URL: /privacidad)."""
+    return html.Div([
+        dbc.NavbarSimple(
+            brand="Agente Político",
+            brand_href="/",
+            color="primary",
+            dark=True,
+            className="mb-4"
+        ),
+        dbc.Container([
+            dbc.Row(dbc.Col([
+                html.H2("Marco Legal de Protección de Datos en Chile", className="mb-4"),
+
+                html.H5("Ley Nº 21.719 — Protección de Datos Personales"),
+                html.P([
+                    "Chile aprobó una nueva ley de protección de datos personales, la ",
+                    html.Strong("Ley Nº 21.719"),
+                    ", publicada en el Diario Oficial el 13 de diciembre de 2024. "
+                    "Esta ley moderniza y reemplaza la antigua Ley Nº 19.628, alineándose con "
+                    "estándares internacionales como el GDPR de la Unión Europea."
+                ]),
+                html.Ul([
+                    html.Li([html.Strong("Objetivo: "), "Regular el tratamiento y protección de datos personales de personas naturales por parte de entidades públicas o privadas."]),
+                    html.Li([html.Strong("Ámbito: "), "Se aplica a toda operación de tratamiento de datos —recolección, uso, almacenamiento, transmisión, etc.— automatizada o no."]),
+                    html.Li([html.Strong("Entrada en vigor: "), "Plena vigencia el 1 de diciembre de 2026, tras un período de transición de 24 meses desde su publicación."]),
+                ]),
+
+                html.Hr(),
+                html.H5("Principios que Rigen el Tratamiento de Datos Personales"),
+                html.Ul([
+                    html.Li([html.Strong("Licitud y lealtad: "), "El tratamiento debe ser legal, justo y transparente."]),
+                    html.Li([html.Strong("Finalidad: "), "Los datos solo pueden usarse para fines específicos y explícitos informados al titular."]),
+                    html.Li([html.Strong("Proporcionalidad: "), "Solo se deben recopilar los datos necesarios y pertinentes."]),
+                    html.Li([html.Strong("Calidad: "), "Datos precisos, completos y actualizados."]),
+                    html.Li([html.Strong("Seguridad: "), "Protección contra accesos no autorizados, pérdidas, filtraciones o destrucción."]),
+                    html.Li([html.Strong("Transparencia: "), "Información clara sobre políticas y prácticas de tratamiento."]),
+                    html.Li([html.Strong("Confidencialidad: "), "Los datos deben mantenerse en secreto, incluso después de terminado el tratamiento."]),
+                ]),
+
+                html.Hr(),
+                html.H5("Condiciones de Tratamiento y Bases Legales"),
+                html.P("Para que el tratamiento de datos sea legítimo, debe contar con una base legal válida:"),
+                html.Ul([
+                    html.Li("Consentimiento informado y explícito del titular."),
+                    html.Li("Necesidad contractual."),
+                    html.Li("Cumplimiento de una obligación legal."),
+                    html.Li("Interés legítimo justificado y documentado."),
+                ]),
+                html.P("El consentimiento debe ser previo, informado, específico e inequívoco."),
+
+                html.Hr(),
+                html.H5("Obligaciones para Responsables del Tratamiento"),
+                html.Ul([
+                    html.Li("Documentar todas las actividades de tratamiento."),
+                    html.Li("Implementar medidas de seguridad adecuadas."),
+                    html.Li("Publicar políticas de privacidad claras y accesibles."),
+                    html.Li("Establecer protocolos para gestionar incidentes y respuesta a derechos de titulares."),
+                    html.Li("Realizar evaluaciones de impacto cuando el tratamiento conlleve riesgos altos."),
+                ]),
+
+                html.Hr(),
+                html.H5("❌ Qué No Permitirá Hacer"),
+                html.Ul([
+                    html.Li("✘ Usar tus datos sin una base legal (sin consentimiento u otra justificación válida)."),
+                    html.Li("✘ Tratar tus datos para fines distintos de los informados sin nuevo consentimiento."),
+                    html.Li("✘ Mantener datos por tiempo indefinido sin necesidad legítima."),
+                    html.Li("✘ Negar o ignorar tus derechos de acceso, rectificación, supresión u oposición."),
+                    html.Li("✘ Ignorar medidas de seguridad o no responder a incidentes de seguridad."),
+                ]),
+
+                html.Hr(),
+                html.H6("Fuentes:"),
+                html.Ul([
+                    html.Li(html.A("Ley Nº 21.719 — BCN", href="https://www.bcn.cl/leychile/navegar?idNorma=1209272", target="_blank")),
+                    html.Li(html.A("Gestión de consentimiento — Entel Digital", href="https://enteldigital.cl/blog/gestion-de-consentimiento-lo-nuevo-en-ley-de-proteccion-de-datos", target="_blank")),
+                    html.Li(html.A("Nueva ley exige preparación empresarial — CCS", href="https://www.ccs.cl/2025/06/04/nueva-ley-de-proteccion-de-datos-exige-preparacion-empresarial-inmediata", target="_blank")),
+                ]),
+                html.P(html.Small("Última actualización: marzo 2026"), className="text-muted mt-2"),
+
+                html.Hr(),
+                dbc.Button("← Volver al Dashboard", href="/", color="primary", className="mt-2"),
+            ], md=8, className="mx-auto"))
+        ], className="py-4"),
+    ])
+
 
 def crear_sidebar():
     """Crear barra lateral con filtros."""
@@ -602,79 +690,6 @@ def crear_contenido():
                 n_intervals=0
             ),
 
-            # Modal Política de Privacidad
-            dbc.Modal([
-                dbc.ModalHeader(dbc.ModalTitle("Marco Legal de Protección de Datos en Chile")),
-                dbc.ModalBody([
-                    html.H5("Ley Nº 21.719 — Protección de Datos Personales"),
-                    html.P([
-                        "Chile aprobó una nueva ley de protección de datos personales, la ",
-                        html.Strong("Ley Nº 21.719"),
-                        ", publicada en el Diario Oficial el 13 de diciembre de 2024. Esta ley moderniza y reemplaza la antigua Ley Nº 19.628, alineándose con estándares internacionales como el GDPR de la Unión Europea."
-                    ]),
-                    html.Ul([
-                        html.Li([html.Strong("Objetivo: "), "Regular el tratamiento y protección de datos personales de personas naturales por parte de entidades públicas o privadas."]),
-                        html.Li([html.Strong("Ámbito: "), "Se aplica a toda operación de tratamiento de datos —recolección, uso, almacenamiento, transmisión, etc.— automatizada o no."]),
-                        html.Li([html.Strong("Entrada en vigor: "), "Plena vigencia el 1 de diciembre de 2026, tras un período de transición de 24 meses desde su publicación."]),
-                    ]),
-
-                    html.Hr(),
-                    html.H5("Principios que Rigen el Tratamiento de Datos Personales"),
-                    html.Ul([
-                        html.Li([html.Strong("Licitud y lealtad: "), "El tratamiento debe ser legal, justo y transparente."]),
-                        html.Li([html.Strong("Finalidad: "), "Los datos solo pueden usarse para fines específicos y explícitos informados al titular."]),
-                        html.Li([html.Strong("Proporcionalidad: "), "Solo se deben recopilar los datos necesarios y pertinentes."]),
-                        html.Li([html.Strong("Calidad: "), "Datos precisos, completos y actualizados."]),
-                        html.Li([html.Strong("Seguridad: "), "Protección contra accesos no autorizados, pérdidas, filtraciones o destrucción."]),
-                        html.Li([html.Strong("Transparencia: "), "Información clara sobre políticas y prácticas de tratamiento."]),
-                        html.Li([html.Strong("Confidencialidad: "), "Los datos deben mantenerse en secreto, incluso después de terminado el tratamiento."]),
-                    ]),
-
-                    html.Hr(),
-                    html.H5("Condiciones de Tratamiento y Bases Legales"),
-                    html.P("Para que el tratamiento de datos sea legítimo, debe contar con una base legal válida:"),
-                    html.Ul([
-                        html.Li("Consentimiento informado y explícito del titular."),
-                        html.Li("Necesidad contractual."),
-                        html.Li("Cumplimiento de una obligación legal."),
-                        html.Li("Interés legítimo justificado y documentado."),
-                    ]),
-                    html.P("El consentimiento debe ser previo, informado, específico e inequívoco."),
-
-                    html.Hr(),
-                    html.H5("Obligaciones para Responsables del Tratamiento"),
-                    html.Ul([
-                        html.Li("Documentar todas las actividades de tratamiento."),
-                        html.Li("Implementar medidas de seguridad adecuadas."),
-                        html.Li("Publicar políticas de privacidad claras y accesibles."),
-                        html.Li("Establecer protocolos para gestionar incidentes y respuesta a derechos de titulares."),
-                        html.Li("Realizar evaluaciones de impacto cuando el tratamiento conlleve riesgos altos."),
-                    ]),
-
-                    html.Hr(),
-                    html.H5("❌ Qué No Permitirá Hacer"),
-                    html.Ul([
-                        html.Li("✘ Usar tus datos sin una base legal (sin consentimiento u otra justificación válida)."),
-                        html.Li("✘ Tratar tus datos para fines distintos de los informados sin nuevo consentimiento."),
-                        html.Li("✘ Mantener datos por tiempo indefinido sin necesidad legítima."),
-                        html.Li("✘ Negar o ignorar tus derechos de acceso, rectificación, supresión u oposición."),
-                        html.Li("✘ Ignorar medidas de seguridad o no responder a incidentes de seguridad."),
-                    ]),
-
-                    html.Hr(),
-                    html.H6("Fuentes:"),
-                    html.Ul([
-                        html.Li(html.A("Ley Nº 21.719 — BCN", href="https://www.bcn.cl/leychile/navegar?idNorma=1209272", target="_blank")),
-                        html.Li(html.A("Gestión de consentimiento — Entel Digital", href="https://enteldigital.cl/blog/gestion-de-consentimiento-lo-nuevo-en-ley-de-proteccion-de-datos", target="_blank")),
-                        html.Li(html.A("Nueva ley exige preparación empresarial — CCS", href="https://www.ccs.cl/2025/06/04/nueva-ley-de-proteccion-de-datos-exige-preparacion-empresarial-inmediata", target="_blank")),
-                    ]),
-                    html.P(html.Small("Última actualización: marzo 2026"), className="text-muted mt-2"),
-                ]),
-                dbc.ModalFooter(
-                    dbc.Button("Cerrar", id="btn-privacidad-cerrar", color="secondary")
-                ),
-            ], id="modal-privacidad", size="lg", scrollable=True, is_open=False),
-
             # Modal Logs del Sistema
             dbc.Modal([
                 dbc.ModalHeader([
@@ -718,12 +733,11 @@ def crear_contenido():
                 html.Hr(),
                 html.Div([
                     html.Span("© 2026 Retarget SpA · ", className="text-muted small"),
-                    dbc.Button(
+                    html.A(
                         "Política de Privacidad",
                         id="btn-abrir-privacidad",
-                        color="link",
-                        size="sm",
-                        className="p-0 text-muted",
+                        href="/privacidad",
+                        className="text-muted small text-decoration-none",
                         style={"fontSize": "0.875rem", "verticalAlign": "baseline"}
                     ),
                     html.Span(" · ", className="text-muted small"),
@@ -780,9 +794,21 @@ def toggle_modal_logs(abrir, cerrar, refresh, is_open):
 # Layout principal
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
-    crear_sidebar(),
-    crear_contenido()
+    html.Div(id='privacy-page', style={'display': 'none'}, children=crear_pagina_privacidad()),
+    html.Div(id='main-dashboard', children=[crear_sidebar(), crear_contenido()]),
 ])
+
+
+@app.callback(
+    [Output('privacy-page', 'style'),
+     Output('main-dashboard', 'style')],
+    Input('url', 'pathname'),
+    prevent_initial_call=False
+)
+def route_page(pathname):
+    if pathname == '/privacidad':
+        return {'display': 'block'}, {'display': 'none'}
+    return {'display': 'none'}, {'display': 'block'}
 
 
 # === Callback para leer páginas via token OAuth (cross-origin safe) ===
@@ -2193,18 +2219,6 @@ def conectar_paginas_seleccionadas(n_clicks, selected_page_ids, pages_data, face
             color="danger",
             dismissable=True
         )
-
-
-# === Callback modal Política de Privacidad ===
-@app.callback(
-    Output("modal-privacidad", "is_open"),
-    [Input("btn-abrir-privacidad", "n_clicks"),
-     Input("btn-privacidad-cerrar", "n_clicks")],
-    State("modal-privacidad", "is_open"),
-    prevent_initial_call=True
-)
-def toggle_modal_privacidad(abrir, cerrar, is_open):
-    return not is_open
 
 
 # === Callbacks de Idioma ===
