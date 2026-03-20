@@ -391,19 +391,32 @@ def crear_contenido():
                                 className="text-muted",
                                 id="texto-desc-fb"
                             ),
-                            html.A(
+                            html.Div([
+                                html.A(
+                                    dbc.Button(
+                                        [
+                                            html.I(className="fab fa-facebook me-2"),
+                                            html.Span("Conectar Facebook/Instagram", id="texto-btn-conectar-fb")
+                                        ],
+                                        color="primary",
+                                        size="lg",
+                                        className="mb-3 me-2"
+                                    ),
+                                    href=f"{BACKEND_URL}/auth/facebook/login",
+                                    id="btn-conectar-facebook"
+                                ),
                                 dbc.Button(
                                     [
-                                        html.I(className="fab fa-facebook me-2"),
-                                        html.Span("Conectar Facebook/Instagram", id="texto-btn-conectar-fb")
+                                        html.I(className="fas fa-sign-out-alt me-2"),
+                                        "Desconectar Facebook"
                                     ],
-                                    color="primary",
+                                    id="btn-desconectar-facebook",
+                                    color="outline-danger",
                                     size="lg",
-                                    className="mb-3"
+                                    className="mb-3",
+                                    style={"display": "none"}
                                 ),
-                                href=f"{BACKEND_URL}/auth/facebook/login",
-                                id="btn-conectar-facebook"
-                            ),
+                            ]),
                             html.Hr(),
                             html.H6("Páginas Conectadas:", className="fw-bold", id="texto-paginas-conectadas"),
                             html.Div(id="lista-candidatos-conectados")
@@ -677,6 +690,7 @@ def crear_contenido():
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
             dcc.Store(id="store-facebook-user-id", storage_type="local"),  # facebook_user_id del usuario autenticado
             dcc.Store(id="store-instagram-access-token"),  # Token de usuario para Instagram Messaging API
+            dcc.Store(id="store-last-activity", storage_type="session"),  # Timestamp de última actividad (auto-logout)
             dcc.Store(id="store-idioma", data="es"),  # Idioma seleccionado: "es" o "en"
             dcc.Store(id="store-sync-candidatos", data={}),  # {candidato_id_str: job_state_dict}
             dcc.Store(id="store-pagina-actual", data=0),
@@ -687,6 +701,12 @@ def crear_contenido():
             dcc.Interval(
                 id="interval-actualizacion",
                 interval=5*60*1000,  # 5 minutos
+                n_intervals=0
+            ),
+            # Interval para verificar inactividad (auto-logout tras 1 hora)
+            dcc.Interval(
+                id="interval-inactivity-check",
+                interval=60*1000,  # cada 1 minuto
                 n_intervals=0
             ),
 
@@ -2300,6 +2320,73 @@ def actualizar_textos_ui(lang):
         t("footer_privacidad", lang),
         [html.I(className="fas fa-terminal me-1"), t("footer_logs", lang)],
     ]
+
+
+# === Callbacks de sesión Facebook: logout manual e inactividad ===
+
+@app.callback(
+    [Output("store-facebook-user-id", "data", allow_duplicate=True),
+     Output("store-facebook-pages", "data", allow_duplicate=True),
+     Output("store-instagram-access-token", "data", allow_duplicate=True)],
+    [Input("btn-desconectar-facebook", "n_clicks"),
+     Input("interval-inactivity-check", "n_intervals")],
+    [State("store-facebook-user-id", "data"),
+     State("store-last-activity", "data")],
+    prevent_initial_call=True
+)
+def manejar_logout_facebook(n_clicks, n_inact, fb_user_id, last_activity):
+    """Logout manual o automático por inactividad (>1 hora)."""
+    trigger = dash.callback_context.triggered_id if dash.callback_context.triggered else None
+
+    if trigger == "btn-desconectar-facebook":
+        if not n_clicks:
+            raise PreventUpdate
+        print("[Frontend] Logout manual de Facebook")
+        return None, None, None
+
+    if trigger == "interval-inactivity-check":
+        if not fb_user_id:
+            raise PreventUpdate
+        if not last_activity:
+            raise PreventUpdate
+        try:
+            last_dt = datetime.fromisoformat(last_activity)
+            if last_dt.tzinfo is None:
+                last_dt = _TZ_CL.localize(last_dt)
+            if (ahora_cl() - last_dt) > timedelta(hours=1):
+                print(f"[Frontend] Auto-logout por inactividad (último acceso: {last_activity})")
+                return None, None, None
+        except Exception as e:
+            print(f"[Frontend] Error verificando inactividad: {e}")
+        raise PreventUpdate
+
+    raise PreventUpdate
+
+
+@app.callback(
+    Output("store-last-activity", "data"),
+    [Input("url", "href"),
+     Input("btn-buscar", "n_clicks")],
+    [State("store-facebook-user-id", "data")],
+    prevent_initial_call=True
+)
+def actualizar_ultima_actividad(href, n_buscar, fb_user_id):
+    """Registra la timestamp de última actividad del usuario autenticado."""
+    if not fb_user_id:
+        raise PreventUpdate
+    return ahora_cl().isoformat()
+
+
+@app.callback(
+    Output("btn-desconectar-facebook", "style"),
+    Input("store-facebook-user-id", "data"),
+    prevent_initial_call=False
+)
+def toggle_visibilidad_desconectar(fb_user_id):
+    """Muestra el botón Desconectar solo cuando hay sesión activa."""
+    if fb_user_id:
+        return {"display": "inline-block"}
+    return {"display": "none"}
 
 
 if __name__ == "__main__":

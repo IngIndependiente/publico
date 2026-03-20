@@ -229,8 +229,12 @@ async def facebook_login(candidato_email: Optional[str] = Query(None)):
     # URL de autorización de Facebook
     # enable_profile_selector: forces the page-picker to appear so the user must
     #   explicitly select which Pages to share (prevents empty /me/accounts).
-    # auth_type=rerequest: forces Facebook to show the full dialog even if the user
-    #   has previously authorized the app, ensuring stale grants are refreshed.
+    # auth_type=reauthenticate: forces Facebook to show the FULL dialog (including the
+    #   page picker) even when the user previously authorized the app. This is stronger
+    #   than 'rerequest', which only re-asks for denied permissions but can skip the
+    #   page-selection step when the token already carries pages_show_list.
+    # select_all_profiles: undocumented but widely used parameter that additionally
+    #   forces the profile/page selector to appear on every login.
     auth_url = "https://www.facebook.com/v18.0/dialog/oauth?" + urlencode({
         "client_id": config.META_APP_ID,
         "redirect_uri": config.OAUTH_REDIRECT_URI,
@@ -238,7 +242,8 @@ async def facebook_login(candidato_email: Optional[str] = Query(None)):
         "scope": ",".join(scopes),
         "response_type": "code",
         "enable_profile_selector": "true",
-        "auth_type": "rerequest"
+        "select_all_profiles": "true",
+        "auth_type": "reauthenticate"
     })
     
     # Redirigir al usuario a Facebook
@@ -407,10 +412,12 @@ async def facebook_callback(
         pages_with_tasks_url = (
             f"https://graph.facebook.com/v18.0/me/accounts?access_token={user_access_token}"
             f"&fields=id,name,access_token,tasks,instagram_business_account{{id,username}}"
+            f"&limit=100"
         )
         pages_basic_url = (
             f"https://graph.facebook.com/v18.0/me/accounts?access_token={user_access_token}"
             f"&fields=id,name,access_token,instagram_business_account{{id,username}}"
+            f"&limit=100"
         )
 
         pages_response = requests.get(pages_with_tasks_url)
@@ -430,11 +437,11 @@ async def facebook_callback(
         if not pages:
             from urllib.parse import quote
             error_msg = quote(
-                "No Facebook Pages were found for your account. "
-                "During the Facebook Login, there is a step titled 'What can [App] access?' or "
-                "'Choose Pages' where you must select which Pages to share. "
-                "Please go to Facebook Settings > Security and Login > Business Integrations, "
-                "remove this app, then reconnect and carefully select your Page in the login dialog."
+                "No se encontraron Páginas de Facebook asociadas a tu cuenta. "
+                "Esto ocurre cuando Facebook omite el paso de selección de página durante el login. "
+                "Solución: ve a Configuración de Facebook > Seguridad e inicio de sesión > "
+                "Integraciones de negocios, elimina esta app y vuelve a conectarla. "
+                "Durante el nuevo login, en el paso 'Elige las páginas' selecciona al menos una página."
             )
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url=f"{config.FRONTEND_URL}/?oauth_error={error_msg}")
