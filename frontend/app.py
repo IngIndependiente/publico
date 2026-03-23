@@ -605,6 +605,49 @@ def crear_contenido():
                 ]),
             ], id="modal-whatsapp-config", is_open=False),
 
+            # Modal para sobrescribir facebook_page_access_token
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle([
+                    html.I(className="fab fa-facebook me-2"), "Token de Facebook / Meta"
+                ])),
+                dbc.ModalBody([
+                    html.P(
+                        "Ingresa un Access Token válido para sobrescribir el token almacenado. "
+                        "Úsalo cuando el token guardado esté expirado (error 190).",
+                        className="text-muted mb-3"
+                    ),
+                    dbc.Label("Access Token:"),
+                    dbc.Textarea(
+                        id="input-fb-access-token",
+                        placeholder="EAAw...",
+                        rows=3,
+                        className="mb-2",
+                        style={"fontFamily": "monospace", "fontSize": "0.8rem"}
+                    ),
+                    html.Div([
+                        html.I(className="fas fa-info-circle me-2 text-info"),
+                        html.Small([
+                            "Genera un token de larga duración en ",
+                            html.A(
+                                "Graph API Explorer",
+                                href="https://developers.facebook.com/tools/explorer/",
+                                target="_blank"
+                            ),
+                            " con permisos pages_messaging e instagram_manage_messages, "
+                            "o vuelve a hacer login con el botón Conectar Facebook/Instagram."
+                        ], className="text-muted")
+                    ], className="alert alert-info py-2 px-3 mb-2"),
+                    html.Div(id="fb-token-status", className="mt-2")
+                ]),
+                dbc.ModalFooter([
+                    dbc.Button("Cancelar", id="btn-fb-token-cancel", color="secondary", className="me-2"),
+                    dbc.Button(
+                        [html.I(className="fas fa-save me-2"), "Guardar"],
+                        id="btn-fb-token-save", color="primary"
+                    )
+                ]),
+            ], id="modal-fb-token", is_open=False),
+
             # Modal configuración Token de Instagram
             # dbc.Modal([
             #     dbc.ModalHeader(dbc.ModalTitle([
@@ -686,6 +729,7 @@ def crear_contenido():
             dcc.Store(id="store-analisis-evento-actual"),  # Para guardar el análisis que está editando evento
             dcc.Store(id="store-candidato-whatsapp-id"),  # Para guardar el candidato que está configurando WhatsApp
             dcc.Store(id="store-candidato-ig-token-id"),   # Para guardar el candidato cuyo token IG se configura
+            dcc.Store(id="store-candidato-fb-token-id"),   # Para guardar el candidato cuyo token FB se sobrescribe
             dcc.Store(id="store-facebook-pages"),  # Para guardar páginas de Facebook
             dcc.Store(id="store-url-params"),  # Para detectar parámetros de URL
             dcc.Store(id="store-facebook-user-id", storage_type="local"),  # facebook_user_id del usuario autenticado
@@ -1790,6 +1834,14 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
                                 ),
                             ], width=6),
                         ]),
+                        dbc.Button(
+                            [html.I(className="fas fa-key me-1"), " Token FB"],
+                            id={"type": "btn-fb-token-candidato", "index": candidato_id},
+                            color="warning",
+                            size="sm",
+                            outline=True,
+                            className="w-100 mt-1",
+                        ),
                         dbc.Switch(
                             id={"type": "switch-force-reprocess", "index": candidato_id},
                             label=t("cand_re_analizar", lang),
@@ -2116,6 +2168,67 @@ def guardar_config_whatsapp(n_clicks, candidato_id, phone_id, business_id, phone
             color="danger",
             dismissable=True
         )
+
+
+# === Callbacks para Token de Facebook ===
+
+@app.callback(
+    [Output("modal-fb-token", "is_open"),
+     Output("store-candidato-fb-token-id", "data"),
+     Output("input-fb-access-token", "value"),
+     Output("fb-token-status", "children")],
+    [Input({"type": "btn-fb-token-candidato", "index": dash.dependencies.ALL}, "n_clicks"),
+     Input("btn-fb-token-cancel", "n_clicks"),
+     Input("btn-fb-token-save", "n_clicks")],
+    [State("modal-fb-token", "is_open"),
+     State({"type": "btn-fb-token-candidato", "index": dash.dependencies.ALL}, "id")],
+    prevent_initial_call=True
+)
+def toggle_modal_fb_token(btn_clicks, btn_cancel, btn_save, is_open, btn_ids):
+    """Abrir/cerrar modal de token de Facebook."""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]["prop_id"]
+    if "btn-fb-token-cancel" in trigger_id or "btn-fb-token-save" in trigger_id:
+        return False, None, "", []
+    if "btn-fb-token-candidato" in trigger_id:
+        for i, clicks in enumerate(btn_clicks):
+            if clicks:
+                return True, btn_ids[i]["index"], "", []
+    return is_open, None, "", []
+
+
+@app.callback(
+    Output("fb-token-status", "children", allow_duplicate=True),
+    Input("btn-fb-token-save", "n_clicks"),
+    [State("store-candidato-fb-token-id", "data"),
+     State("input-fb-access-token", "value")],
+    prevent_initial_call=True
+)
+def guardar_fb_token(n_clicks, candidato_id, token_value):
+    """Guardar el nuevo facebook_page_access_token para el candidato."""
+    if not n_clicks or not candidato_id:
+        raise PreventUpdate
+    token_value = (token_value or "").strip()
+    if not token_value:
+        return dbc.Alert("Ingresa un token válido.", color="warning", dismissable=True)
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/api/candidatos/{candidato_id}/facebook-token",
+            json={"facebook_access_token": token_value},
+            timeout=5
+        )
+        if response.ok:
+            return dbc.Alert(
+                [html.I(className="fas fa-check-circle me-2"), "Token actualizado correctamente."],
+                color="success", dismissable=True
+            )
+        else:
+            detail = response.json().get("detail", "Error desconocido")
+            return dbc.Alert(f"Error: {detail}", color="danger", dismissable=True)
+    except Exception as e:
+        return dbc.Alert(f"Error de conexión: {str(e)}", color="danger", dismissable=True)
 
 
 # === Callbacks para selección de páginas de Facebook ===

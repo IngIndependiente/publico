@@ -288,6 +288,7 @@ async def facebook_callback(
         
         user_email = user_data.get('email')
         user_name = user_data.get('name')
+        facebook_id = user_data.get('id')
         
         # 3. VALIDAR SI USUARIO ESTÁ AUTORIZADO (LISTA BLANCA)
         # Solo si config.VALIDAR_USUARIOS está activado (producción)
@@ -435,16 +436,78 @@ async def facebook_callback(
         pages = pages_data.get('data', [])
 
         if not pages:
-            from urllib.parse import quote
-            error_msg = quote(
-                "No se encontraron Páginas de Facebook asociadas a tu cuenta. "
-                "Esto ocurre cuando Facebook omite el paso de selección de página durante el login. "
-                "Solución: ve a Configuración de Facebook > Seguridad e inicio de sesión > "
-                "Integraciones de negocios, elimina esta app y vuelve a conectarla. "
-                "Durante el nuevo login, en el paso 'Elige las páginas' selecciona al menos una página."
-            )
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url=f"{config.FRONTEND_URL}/?oauth_error={error_msg}")
+            # NPE workaround: reconstruct pages from existing DB candidatos for this owner.
+            print(f"[OAuth] /me/accounts returned empty for user {facebook_id}. Trying DB fallback.")
+            db_pages = CandidatoService.obtener_paginas_por_owner(facebook_id) if facebook_id else []
+            db_pages = [p for p in db_pages if p.get('facebook_page_id')]
+            if db_pages:
+                print(f"[OAuth] DB fallback: found {len(db_pages)} candidato(s). Reconstructing pages_info.")
+                from datetime import timedelta
+                for p in db_pages:
+                    token_exp = datetime.utcnow() + timedelta(days=60)
+                    CandidatoService.actualizar_tokens_facebook(
+                        candidato_id=p['id'],
+                        facebook_page_id=p['facebook_page_id'],
+                        facebook_page_name=p.get('facebook_page_name', ''),
+                        facebook_page_access_token=user_access_token,
+                        facebook_token_expiration=token_exp,
+                        instagram_business_account_id=p.get('instagram_business_account_id'),
+                        instagram_username=p.get('instagram_username'),
+                        instagram_access_token=user_access_token,
+                        owner_facebook_user_id=facebook_id,
+                    )
+                    pages.append({
+                        'id': p['facebook_page_id'],
+                        'name': p.get('facebook_page_name', 'Página'),
+                        'access_token': user_access_token,
+                        'instagram_business_account': {
+                            'id': p.get('instagram_business_account_id'),
+                            'username': p.get('instagram_username'),
+                        } if p.get('instagram_business_account_id') else None,
+                        'tasks': ['MANAGE'],
+                    })
+            else:
+                # No owner-matched candidatos. Try ALL active candidatos with a page_id
+                # (covers single-tenant setups where owner_facebook_user_id was never set).
+                print(f"[OAuth] No candidatos with owner={facebook_id}. Trying all active candidatos.")
+                all_pages = CandidatoService.obtener_todas_paginas()
+                if all_pages:
+                    print(f"[OAuth] Found {len(all_pages)} unowned candidato(s) — claiming for user {facebook_id}.")
+                    from datetime import timedelta
+                    token_exp = datetime.utcnow() + timedelta(days=60)
+                    for p in all_pages:
+                        CandidatoService.actualizar_tokens_facebook(
+                            candidato_id=p['id'],
+                            facebook_page_id=p['facebook_page_id'],
+                            facebook_page_name=p.get('facebook_page_name', ''),
+                            facebook_page_access_token=user_access_token,
+                            facebook_token_expiration=token_exp,
+                            instagram_business_account_id=p.get('instagram_business_account_id'),
+                            instagram_username=p.get('instagram_username'),
+                            instagram_access_token=user_access_token,
+                            owner_facebook_user_id=facebook_id,
+                        )
+                        pages.append({
+                            'id': p['facebook_page_id'],
+                            'name': p.get('facebook_page_name', 'Página'),
+                            'access_token': user_access_token,
+                            'instagram_business_account': {
+                                'id': p.get('instagram_business_account_id'),
+                                'username': p.get('instagram_username'),
+                            } if p.get('instagram_business_account_id') else None,
+                            'tasks': ['MANAGE'],
+                        })
+                else:
+                    from urllib.parse import quote
+                    error_msg = quote(
+                        "No se encontraron Páginas de Facebook asociadas a tu cuenta. "
+                        "Esto ocurre cuando Facebook omite el paso de selección de página durante el login. "
+                        "Solución: ve a Configuración de Facebook > Seguridad e inicio de sesión > "
+                        "Integraciones de negocios, elimina esta app y vuelve a conectarla. "
+                        "Durante el nuevo login, en el paso 'Elige las páginas' selecciona al menos una página."
+                    )
+                    from fastapi.responses import RedirectResponse
+                    return RedirectResponse(url=f"{config.FRONTEND_URL}/?oauth_error={error_msg}")
         
         # 6. Procesar información de cada página
         pages_info = []
@@ -1166,6 +1229,46 @@ async def actualizar_instagram_token(candidato_id: int, request: Request):
         raise
     except Exception as e:
         print(f"❌ Error actualizando token de Instagram: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/candidatos/{candidato_id}/facebook-token")
+async def actualizar_facebook_token(candidato_id: int, request: Request):
+    """Sobrescribir el facebook_page_access_token para un candidato y actualizar META_ACCESS_TOKEN en memoria."""
+    try:
+        body = await request.json()
+        facebook_access_token = (body.get("facebook_access_token") or "").strip()
+        if not facebook_access_token:
+            raise HTTPException(status_code=400, detail="Token vacío")
+
+        if config.ENV == "local":
+            from backend.database.dataframe_storage import get_storage
+            storage = get_storage()
+            mask = storage.candidatos_df['id'] == candidato_id
+            if not mask.any():
+                raise HTTPException(status_code=404, detail="Candidato no encontrado")
+            storage.candidatos_df.loc[mask, 'facebook_page_access_token'] = facebook_access_token
+            storage.save_candidatos()
+        else:
+            from backend.database.models import Candidato as CandidatoModel
+            with get_db() as db:
+                candidato_obj = db.query(CandidatoModel).filter(CandidatoModel.id == candidato_id).first()
+                if not candidato_obj:
+                    raise HTTPException(status_code=404, detail="Candidato no encontrado")
+                candidato_obj.facebook_page_access_token = facebook_access_token
+                db.commit()
+
+        # También actualizar META_ACCESS_TOKEN en memoria para esta instancia
+        config.META_ACCESS_TOKEN = facebook_access_token
+
+        return {"success": True, "message": "Token de Facebook actualizado correctamente"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error actualizando token de Facebook: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
