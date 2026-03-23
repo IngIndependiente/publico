@@ -882,13 +882,14 @@ def route_page(pathname):
      Output('store-instagram-access-token', 'data'),
      Output('oauth-toast', 'children'),
      Output('oauth-toast', 'is_open'),
-     Output('oauth-toast', 'icon')],
+     Output('oauth-toast', 'icon'),
+     Output('url', 'search')],
     Input('url', 'href'),
     prevent_initial_call=False
 )
 def cargar_paginas_oauth(href):
     """Detecta oauth_token o oauth_error en la URL y carga las páginas disponibles."""
-    no_toast = (dash.no_update, dash.no_update, dash.no_update, dash.no_update, False, dash.no_update)
+    no_toast = (dash.no_update, dash.no_update, dash.no_update, dash.no_update, False, dash.no_update, dash.no_update)
 
     if not href:
         raise PreventUpdate
@@ -901,7 +902,7 @@ def cargar_paginas_oauth(href):
     if 'oauth_error' in params:
         error_msg = unquote(params['oauth_error'][0])
         print(f"[Frontend] oauth_error recibido: {error_msg}")
-        return dash.no_update, dash.no_update, dash.no_update, error_msg, True, "danger"
+        return dash.no_update, dash.no_update, dash.no_update, error_msg, True, "danger", ""
 
     if 'oauth_token' not in params:
         raise PreventUpdate
@@ -919,16 +920,16 @@ def cargar_paginas_oauth(href):
             instagram_access_token = data.get('instagram_access_token')
             print(f"[Frontend] Páginas recibidas: {[p.get('page_name') for p in pages]}")
             if pages:
-                return pages, facebook_user_id, instagram_access_token, dash.no_update, False, dash.no_update
+                return pages, facebook_user_id, instagram_access_token, dash.no_update, False, dash.no_update, ""
             else:
-                return dash.no_update, dash.no_update, dash.no_update, "No se encontraron páginas en la sesión OAuth.", True, "warning"
+                return dash.no_update, dash.no_update, dash.no_update, "No se encontraron páginas en la sesión OAuth.", True, "warning", ""
         else:
             msg = f"Error al recuperar la sesión OAuth ({response.status_code}): {response.text[:200]}"
             print(f"[Frontend] {msg}")
-            return dash.no_update, dash.no_update, dash.no_update, msg, True, "danger"
+            return dash.no_update, dash.no_update, dash.no_update, msg, True, "danger", ""
     except Exception as e:
         print(f"[Frontend] Error recuperando sesión OAuth: {e}")
-        return dash.no_update, dash.no_update, dash.no_update, f"Error de conexión: {e}", True, "danger"
+        return dash.no_update, dash.no_update, dash.no_update, f"Error de conexión: {e}", True, "danger", ""
 
 
 # === Callbacks ===
