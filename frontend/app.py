@@ -606,47 +606,47 @@ def crear_contenido():
             ], id="modal-whatsapp-config", is_open=False),
 
             # Modal para sobrescribir facebook_page_access_token
-            dbc.Modal([
-                dbc.ModalHeader(dbc.ModalTitle([
-                    html.I(className="fab fa-facebook me-2"), "Token de Facebook / Meta"
-                ])),
-                dbc.ModalBody([
-                    html.P(
-                        "Ingresa un Access Token válido para sobrescribir el token almacenado. "
-                        "Úsalo cuando el token guardado esté expirado (error 190).",
-                        className="text-muted mb-3"
-                    ),
-                    dbc.Label("Access Token:"),
-                    dbc.Textarea(
-                        id="input-fb-access-token",
-                        placeholder="EAAw...",
-                        rows=3,
-                        className="mb-2",
-                        style={"fontFamily": "monospace", "fontSize": "0.8rem"}
-                    ),
-                    html.Div([
-                        html.I(className="fas fa-info-circle me-2 text-info"),
-                        html.Small([
-                            "Genera un token de larga duración en ",
-                            html.A(
-                                "Graph API Explorer",
-                                href="https://developers.facebook.com/tools/explorer/",
-                                target="_blank"
-                            ),
-                            " con permisos pages_messaging e instagram_manage_messages, "
-                            "o vuelve a hacer login con el botón Conectar Facebook/Instagram."
-                        ], className="text-muted")
-                    ], className="alert alert-info py-2 px-3 mb-2"),
-                    html.Div(id="fb-token-status", className="mt-2")
-                ]),
-                dbc.ModalFooter([
-                    dbc.Button("Cancelar", id="btn-fb-token-cancel", color="secondary", className="me-2"),
-                    dbc.Button(
-                        [html.I(className="fas fa-save me-2"), "Guardar"],
-                        id="btn-fb-token-save", color="primary"
-                    )
-                ]),
-            ], id="modal-fb-token", is_open=False),
+            # dbc.Modal([
+            #     dbc.ModalHeader(dbc.ModalTitle([
+            #         html.I(className="fab fa-facebook me-2"), "Token de Facebook / Meta"
+            #     ])),
+            #     dbc.ModalBody([
+            #         html.P(
+            #             "Ingresa un Access Token válido para sobrescribir el token almacenado. "
+            #             "Úsalo cuando el token guardado esté expirado (error 190).",
+            #             className="text-muted mb-3"
+            #         ),
+            #         dbc.Label("Access Token:"),
+            #         dbc.Textarea(
+            #             id="input-fb-access-token",
+            #             placeholder="EAAw...",
+            #             rows=3,
+            #             className="mb-2",
+            #             style={"fontFamily": "monospace", "fontSize": "0.8rem"}
+            #         ),
+            #         html.Div([
+            #             html.I(className="fas fa-info-circle me-2 text-info"),
+            #             html.Small([
+            #                 "Genera un token de larga duración en ",
+            #                 html.A(
+            #                     "Graph API Explorer",
+            #                     href="https://developers.facebook.com/tools/explorer/",
+            #                     target="_blank"
+            #                 ),
+            #                 " con permisos pages_messaging e instagram_manage_messages, "
+            #                 "o vuelve a hacer login con el botón Conectar Facebook/Instagram."
+            #             ], className="text-muted")
+            #         ], className="alert alert-info py-2 px-3 mb-2"),
+            #         html.Div(id="fb-token-status", className="mt-2")
+            #     ]),
+            #     dbc.ModalFooter([
+            #         dbc.Button("Cancelar", id="btn-fb-token-cancel", color="secondary", className="me-2"),
+            #         dbc.Button(
+            #             [html.I(className="fas fa-save me-2"), "Guardar"],
+            #             id="btn-fb-token-save", color="primary"
+            #         )
+            #     ]),
+            # ], id="modal-fb-token", is_open=False),
 
             # Modal configuración Token de Instagram
             # dbc.Modal([

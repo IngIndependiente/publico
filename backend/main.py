@@ -435,6 +435,25 @@ async def facebook_callback(
 
         pages = pages_data.get('data', [])
 
+        def _fetch_page_token(page_id: str, user_token: str) -> str:
+            """Try to get a Page Access Token for an NPE page via /{page_id}?fields=access_token.
+            Falls back to user_token if the call fails or returns no token."""
+            try:
+                r = requests.get(
+                    f"https://graph.facebook.com/v18.0/{page_id}",
+                    params={"fields": "access_token,name", "access_token": user_token},
+                    timeout=8
+                )
+                data = r.json()
+                tok = data.get("access_token")
+                if tok:
+                    print(f"[OAuth] Page token fetched for {page_id}: prefix={tok[:12]}...")
+                    return tok
+                print(f"[OAuth] /{page_id}?fields=access_token returned no token: {data}")
+            except Exception as exc:
+                print(f"[OAuth] Failed to fetch page token for {page_id}: {exc}")
+            return user_token
+
         if not pages:
             # NPE workaround: reconstruct pages from existing DB candidatos for this owner.
             print(f"[OAuth] /me/accounts returned empty for user {facebook_id}. Trying DB fallback.")
@@ -444,12 +463,13 @@ async def facebook_callback(
                 print(f"[OAuth] DB fallback: found {len(db_pages)} candidato(s). Reconstructing pages_info.")
                 from datetime import timedelta
                 for p in db_pages:
+                    page_token = _fetch_page_token(p['facebook_page_id'], user_access_token)
                     token_exp = datetime.utcnow() + timedelta(days=60)
                     CandidatoService.actualizar_tokens_facebook(
                         candidato_id=p['id'],
                         facebook_page_id=p['facebook_page_id'],
                         facebook_page_name=p.get('facebook_page_name', ''),
-                        facebook_page_access_token=user_access_token,
+                        facebook_page_access_token=page_token,
                         facebook_token_expiration=token_exp,
                         instagram_business_account_id=p.get('instagram_business_account_id'),
                         instagram_username=p.get('instagram_username'),
@@ -459,7 +479,7 @@ async def facebook_callback(
                     pages.append({
                         'id': p['facebook_page_id'],
                         'name': p.get('facebook_page_name', 'Página'),
-                        'access_token': user_access_token,
+                        'access_token': page_token,
                         'instagram_business_account': {
                             'id': p.get('instagram_business_account_id'),
                             'username': p.get('instagram_username'),
@@ -476,11 +496,12 @@ async def facebook_callback(
                     from datetime import timedelta
                     token_exp = datetime.utcnow() + timedelta(days=60)
                     for p in all_pages:
+                        page_token = _fetch_page_token(p['facebook_page_id'], user_access_token)
                         CandidatoService.actualizar_tokens_facebook(
                             candidato_id=p['id'],
                             facebook_page_id=p['facebook_page_id'],
                             facebook_page_name=p.get('facebook_page_name', ''),
-                            facebook_page_access_token=user_access_token,
+                            facebook_page_access_token=page_token,
                             facebook_token_expiration=token_exp,
                             instagram_business_account_id=p.get('instagram_business_account_id'),
                             instagram_username=p.get('instagram_username'),
@@ -490,7 +511,7 @@ async def facebook_callback(
                         pages.append({
                             'id': p['facebook_page_id'],
                             'name': p.get('facebook_page_name', 'Página'),
-                            'access_token': user_access_token,
+                            'access_token': page_token,
                             'instagram_business_account': {
                                 'id': p.get('instagram_business_account_id'),
                                 'username': p.get('instagram_username'),
@@ -964,11 +985,36 @@ def sincronizar_candidato(
         if job.get("state") == "running":
             return {"ok": False, "message": "Ya hay una sincronización en curso para este candidato."}
 
-        # Always use the per-candidato page_access_token for Facebook.
-        # Using a global ENV token (META_ACCESS_TOKEN) across multiple candidatos causes
-        # error #10 "Requested Page Does Not Match Page Access Token" because each
-        # page_access_token is scoped to a specific Page.
-        _fb_token = candidato.get('facebook_page_access_token')
+        # Para leer conversaciones se necesita pages_messaging — META_ACCESS_TOKEN
+        # (una Page Access Token configurada en Railway) tiene prioridad sobre el
+        # token por-candidato guardado en BD. Si no hay ENV token, usa el de BD
+        # y hace un intento de auto-conversión UAT→PAT antes de sincronizar.
+        _page_id = candidato.get('facebook_page_id')
+        _fb_token = config.META_ACCESS_TOKEN or candidato.get('facebook_page_access_token')
+
+        # Self-heal: si el token de BD es un User Access Token (no Page Access Token),
+        # intentar auto-convertirlo antes de sincronizar.
+        if not config.META_ACCESS_TOKEN and _fb_token and _page_id:
+            try:
+                _r = requests.get(
+                    f"https://graph.facebook.com/v18.0/{_page_id}",
+                    params={"fields": "access_token", "access_token": _fb_token},
+                    timeout=8
+                )
+                _page_tok = _r.json().get("access_token")
+                if _page_tok and _page_tok != _fb_token:
+                    print(f"   🔄 [Sync] Auto-exchanged UAT → Page Token for {_page_id}: prefix={_page_tok[:12]}...")
+                    _fb_token = _page_tok
+                    # Persistir el token correcto para futuros syncs
+                    from backend.database.models import Candidato as _CandidatoModel
+                    with get_db() as _db:
+                        _co = _db.query(_CandidatoModel).filter(_CandidatoModel.id == candidato_id).first()
+                        if _co:
+                            _co.facebook_page_access_token = _page_tok
+                            _db.commit()
+            except Exception as _exc:
+                print(f"   ⚠️ [Sync] Page token exchange failed: {_exc}. Proceeding with stored token.")
+
         cliente = crear_cliente_candidato(
             _fb_token,
             instagram_token=candidato.get('instagram_access_token')
@@ -976,7 +1022,8 @@ def sincronizar_candidato(
         _ig_db = candidato.get('instagram_access_token')
         _ig_valid = isinstance(_ig_db, str) and bool(_ig_db.strip())
         token_source = "DB" if _ig_valid else "PAGE_TOKEN_FALLBACK"
-        print(f"   🔑 Facebook token source: DB(facebook_page_access_token) | prefix={(_fb_token or '')[:12]}...")
+        _fb_src = "ENV(META_ACCESS_TOKEN)" if config.META_ACCESS_TOKEN else "DB(facebook_page_access_token)"
+        print(f"   🔑 Facebook token source: {_fb_src} | prefix={(_fb_token or '')[:12]}...")
         print(f"   🔑 Instagram token source: {token_source} | db_raw={repr(_ig_db)[:30]} | prefix={(cliente.instagram_token or '')[:12]}...")
         if desde_fecha:
             try:
@@ -1236,12 +1283,38 @@ async def actualizar_instagram_token(candidato_id: int, request: Request):
 
 @app.post("/api/candidatos/{candidato_id}/facebook-token")
 async def actualizar_facebook_token(candidato_id: int, request: Request):
-    """Sobrescribir el facebook_page_access_token para un candidato y actualizar META_ACCESS_TOKEN en memoria."""
+    """Sobrescribir el facebook_page_access_token para un candidato.
+    Si el token dado es un User Access Token, intenta cambiarlo automáticamente
+    por un Page Access Token usando /{page_id}?fields=access_token."""
     try:
         body = await request.json()
-        facebook_access_token = (body.get("facebook_access_token") or "").strip()
-        if not facebook_access_token:
+        given_token = (body.get("facebook_access_token") or "").strip()
+        if not given_token:
             raise HTTPException(status_code=400, detail="Token vacío")
+
+        # Resolve candidato and page_id first
+        candidato = CandidatoService.obtener_candidato_por_id(candidato_id)
+        if not candidato:
+            raise HTTPException(status_code=404, detail="Candidato no encontrado")
+        page_id = candidato.get('facebook_page_id')
+
+        # Try to exchange for a proper Page Access Token
+        facebook_access_token = given_token
+        if page_id:
+            try:
+                r = requests.get(
+                    f"https://graph.facebook.com/v18.0/{page_id}",
+                    params={"fields": "access_token,name", "access_token": given_token},
+                    timeout=8
+                )
+                tok = r.json().get("access_token")
+                if tok:
+                    print(f"[TokenFB] Exchanged user token → page token for {page_id}: prefix={tok[:12]}...")
+                    facebook_access_token = tok
+                else:
+                    print(f"[TokenFB] No page token returned for {page_id}: {r.json()}. Storing given token as-is.")
+            except Exception as exc:
+                print(f"[TokenFB] Exchange failed for {page_id}: {exc}. Storing given token as-is.")
 
         if config.ENV == "local":
             from backend.database.dataframe_storage import get_storage
@@ -1263,7 +1336,8 @@ async def actualizar_facebook_token(candidato_id: int, request: Request):
         # También actualizar META_ACCESS_TOKEN en memoria para esta instancia
         config.META_ACCESS_TOKEN = facebook_access_token
 
-        return {"success": True, "message": "Token de Facebook actualizado correctamente"}
+        stored_type = "Page Token" if facebook_access_token != given_token else "token (sin cambio de tipo)"
+        return {"success": True, "message": f"Token de Facebook actualizado correctamente ({stored_type})"}
 
     except HTTPException:
         raise
