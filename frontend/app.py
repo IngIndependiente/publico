@@ -1835,14 +1835,14 @@ def cargar_candidatos_conectados(n, lang, sync_store, facebook_user_id):
                                 ),
                             ], width=6),
                         ]),
-                        dbc.Button(
-                            [html.I(className="fas fa-key me-1"), " Token FB"],
-                            id={"type": "btn-fb-token-candidato", "index": candidato_id},
-                            color="warning",
-                            size="sm",
-                            outline=True,
-                            className="w-100 mt-1",
-                        ),
+                        # dbc.Button(
+                        #     [html.I(className="fas fa-key me-1"), " Token FB"],
+                        #     id={"type": "btn-fb-token-candidato", "index": candidato_id},
+                        #     color="warning",
+                        #     size="sm",
+                        #     outline=True,
+                        #     className="w-100 mt-1",
+                        # ),
                         dbc.Switch(
                             id={"type": "switch-force-reprocess", "index": candidato_id},
                             label=t("cand_re_analizar", lang),
