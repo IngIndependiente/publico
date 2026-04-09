@@ -521,24 +521,28 @@ def crear_contenido():
                 ]),
                 dbc.ModalFooter(
                     html.Div([
-                        # Reply section (Facebook / Instagram only)
-                        html.Div([
-                            dbc.InputGroup([
-                                dbc.Textarea(
-                                    id="input-reply-mensaje",
-                                    placeholder="Write a reply...",
-                                    rows=2,
-                                    style={"resize": "none", "fontSize": "0.9rem"}
-                                ),
-                                dbc.Button(
-                                    [html.I(className="fas fa-paper-plane me-1"), "Send"],
-                                    id="btn-reply-enviar",
-                                    color="primary",
-                                    style={"whiteSpace": "nowrap"}
-                                ),
-                            ], className="mb-2"),
-                            html.Div(id="reply-status", className="small"),
-                        ], className="w-100 mb-2"),
+                        # Reply section TEMPORARILY DISABLED for Meta permission review
+                        # html.Div([
+                        #     dbc.InputGroup([
+                        #         dbc.Textarea(
+                        #             id="input-reply-mensaje",
+                        #             placeholder="Write a reply...",
+                        #             rows=2,
+                        #             style={"resize": "none", "fontSize": "0.9rem"}
+                        #         ),
+                        #         dbc.Button(
+                        #             [html.I(className="fas fa-paper-plane me-1"), "Send"],
+                        #             id="btn-reply-enviar",
+                        #             color="primary",
+                        #             style={"whiteSpace": "nowrap"}
+                        #         ),
+                        #     ], className="mb-2"),
+                        #     html.Div(id="reply-status", className="small"),
+                        # ], className="w-100 mb-2"),
+                        # Hidden dummy components to keep callbacks valid
+                        dbc.Textarea(id="input-reply-mensaje", style={"display": "none"}),
+                        dbc.Button(id="btn-reply-enviar", style={"display": "none"}),
+                        html.Div(id="reply-status", style={"display": "none"}),
                         dbc.Button("Cerrar", id="modal-conversacion-cerrar", color="secondary"),
                     ], className="d-flex flex-column w-100")
                 ),
@@ -1378,35 +1382,9 @@ def cargar_conversacion(analisis_id):
     prevent_initial_call=True
 )
 def enviar_reply(n_clicks, texto, analisis_id):
-    """Enviar respuesta manual a la conversación activa."""
-    if not n_clicks or not texto or not texto.strip():
-        raise PreventUpdate
-
-    if not analisis_id:
-        return dbc.Alert("No hay conversación activa.", color="warning", className="py-1 px-2"), texto
-
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/conversaciones/{analisis_id}/responder",
-            json={"texto": texto.strip()},
-            timeout=10
-        )
-        if response.ok:
-            return dbc.Alert(
-                [html.I(className="fas fa-check-circle me-1"), "Message sent successfully."],
-                color="success", className="py-1 px-2 mb-0"
-            ), ""
-        else:
-            detail = response.json().get("detail", response.text)
-            return dbc.Alert(
-                [html.I(className="fas fa-exclamation-circle me-1"), f"Error: {detail}"],
-                color="danger", className="py-1 px-2 mb-0"
-            ), texto
-    except Exception as e:
-        return dbc.Alert(
-            [html.I(className="fas fa-exclamation-circle me-1"), f"Connection error: {str(e)}"],
-            color="danger", className="py-1 px-2 mb-0"
-        ), texto
+    """Enviar respuesta manual a la conversación activa. TEMPORARILY DISABLED."""
+    # Reply functionality disabled for Meta permission review
+    raise PreventUpdate
 
 
 @app.callback(
