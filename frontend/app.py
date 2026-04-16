@@ -539,10 +539,6 @@ def crear_contenido():
                             ], className="mb-2"),
                             html.Div(id="reply-status", className="small"),
                         ], className="w-100 mb-2"),
-                        # Hidden dummy components to keep callbacks valid
-                        dbc.Textarea(id="input-reply-mensaje", style={"display": "none"}),
-                        dbc.Button(id="btn-reply-enviar", style={"display": "none"}),
-                        html.Div(id="reply-status", style={"display": "none"}),
                         dbc.Button("Cerrar", id="modal-conversacion-cerrar", color="secondary"),
                     ], className="d-flex flex-column w-100")
                 ),
